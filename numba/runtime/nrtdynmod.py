@@ -20,6 +20,8 @@ _meminfo_struct_type = ir.LiteralStructType([
     _pointer_type,  # void *dtor_info
     _pointer_type,  # void *data
     _word_type,     # size_t size
+    _pointer_type,   # PyObject *ownerobj
+    _word_type     # size_t flags
     ])
 
 
@@ -41,6 +43,20 @@ def _define_nrt_meminfo_data(module):
     builder.ret(data_ptr)
 
 
+def _define_nrt_meminfo_ownerobj(module):
+    """
+    Implement NRT_MemInfo_data_fast in the module.  This allows LLVM
+    to inline lookup of the data pointer.
+    """
+    fn = module.get_or_insert_function(meminfo_data_ty,
+                                       name="NRT_MemInfo_ownerobj_fast")
+    builder = ir.IRBuilder(fn.append_basic_block())
+    [ptr] = fn.args
+    struct_ptr = builder.bitcast(ptr, _meminfo_struct_type.as_pointer())
+    obj_ptr = builder.load(cgutils.gep(builder, struct_ptr, 0, 5))
+    builder.ret(obj_ptr)
+
+
 def _define_nrt_incref(module, atomic_incr):
     """
     Implement NRT_incref in the module
@@ -56,7 +72,7 @@ def _define_nrt_incref(module, atomic_incr):
         builder.ret_void()
 
     if _debug_print:
-        cgutils.printf(builder, "*** NRT_Incref %zu [%p]\n", builder.load(ptr),
+        cgutils.printf(builder, "*** NRT_Incref to %p [%p]\n", builder.load(ptr),
                        ptr)
     builder.call(atomic_incr, [builder.bitcast(ptr, atomic_incr.args[0].type)])
     builder.ret_void()
@@ -80,8 +96,7 @@ def _define_nrt_decref(module, atomic_decr):
         builder.ret_void()
 
     if _debug_print:
-        cgutils.printf(builder, "*** NRT_Decref %zu [%p]\n", builder.load(ptr),
-                       ptr)
+        cgutils.printf(builder, "*** NRT_Decref to %u [%p]\n", builder.load(ptr), ptr)
 
     # For memory fence usage, see https://llvm.org/docs/Atomics.html
 
@@ -192,6 +207,7 @@ def create_nrt_module(ctx):
     _define_atomic_cas(ir_mod, ordering='monotonic')
 
     _define_nrt_meminfo_data(ir_mod)
+    _define_nrt_meminfo_ownerobj(ir_mod)
     _define_nrt_incref(ir_mod, atomic_inc)
     _define_nrt_decref(ir_mod, atomic_dec)
 

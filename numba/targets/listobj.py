@@ -162,11 +162,11 @@ class ListInstance(_ListPayloadMixin):
 
     @property
     def parent(self):
-        return self._list.parent
+        return self._context.nrt.meminfo_ownerobj(self._builder, self.meminfo)
 
     @parent.setter
     def parent(self, value):
-        self._list.parent = value
+        raise DeprecationWarning("setting list parent is deprecated, use meminfo->ownerobj instead.")
 
     @property
     def value(self):
@@ -220,7 +220,7 @@ class ListInstance(_ListPayloadMixin):
         cgutils.memset(builder, base, size, ir.IntType(8)(0))
 
     @classmethod
-    def allocate_ex(cls, context, builder, list_type, nitems):
+    def allocate_ex(cls, context, builder, list_type, obj, nitems):
         """
         Allocate a ListInstance with its storage.
         Return a (ok, instance) tuple where *ok* is a LLVM boolean and
@@ -228,6 +228,9 @@ class ListInstance(_ListPayloadMixin):
         only valid when *ok* is true).
         """
         intp_t = context.get_value_type(types.intp)
+
+        if not list_type.reflected:
+            obj=None
 
         if isinstance(nitems, int):
             nitems = ir.Constant(intp_t, nitems)
@@ -251,14 +254,17 @@ class ListInstance(_ListPayloadMixin):
 
         with builder.if_then(builder.load(ok), likely=True):
             meminfo = context.nrt.meminfo_new_varsize_dtor(
-                builder, size=allocsize, dtor=self.get_dtor())
+                builder, size=allocsize, dtor=self.get_dtor(),
+                ownerobj=obj
+            )
+            if obj:
+                context.get_python_api(builder).incref(obj) # meminfo will decref obj on destruction
             with builder.if_else(cgutils.is_null(builder, meminfo),
                                  likely=False) as (if_error, if_ok):
                 with if_error:
                     builder.store(cgutils.false_bit, ok)
                 with if_ok:
                     self._list.meminfo = meminfo
-                    self._list.parent = context.get_constant_null(types.pyobject)
                     self._payload.allocated = nitems
                     self._payload.size = ir.Constant(intp_t, 0)  # for safety
                     self._payload.dirty = cgutils.false_bit
@@ -314,7 +320,7 @@ class ListInstance(_ListPayloadMixin):
         control is transferred to the caller using the target's current
         call convention.
         """
-        ok, self = cls.allocate_ex(context, builder, list_type, nitems)
+        ok, self = cls.allocate_ex(context, builder, list_type, None, nitems)
         with builder.if_then(builder.not_(ok), likely=False):
             context.call_conv.return_user_exc(builder, MemoryError,
                                               ("cannot allocate list",))
@@ -329,7 +335,6 @@ class ListInstance(_ListPayloadMixin):
         """
         self = cls(context, builder, list_type, None)
         self._list.meminfo = meminfo
-        self._list.parent = context.get_constant_null(types.pyobject)
         context.nrt.incref(builder, list_type, self.value)
         # Payload is part of the meminfo, no need to touch it
         return self

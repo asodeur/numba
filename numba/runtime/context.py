@@ -4,7 +4,6 @@ from llvmlite import ir
 
 from numba import cgutils, types
 
-
 class NRTContext(object):
     """
     An object providing access to NRT APIs in the lowering pass.
@@ -41,31 +40,31 @@ class NRTContext(object):
         fn = mod.get_or_insert_function(fnty, name="NRT_Free")
         return builder.call(fn, [ptr])
 
-    def meminfo_alloc(self, builder, size):
+    def meminfo_alloc(self, builder, size, ownerobj=None):
         """
         Allocate a new MemInfo with a data payload of `size` bytes.
 
         A pointer to the MemInfo is returned.
         """
-        self._require_nrt()
+        return self.meminfo_alloc_dtor(
+            self, builder, size, dtor=ir.Constant(cgutils.voidptr_t, None), ownerobj=ownerobj
+        )
 
-        mod = builder.module
-        fnty = ir.FunctionType(cgutils.voidptr_t, [cgutils.intp_t])
-        fn = mod.get_or_insert_function(fnty, name="NRT_MemInfo_alloc_safe")
-        fn.return_value.add_attribute("noalias")
-        return builder.call(fn, [size])
-
-    def meminfo_alloc_dtor(self, builder, size, dtor):
+    def meminfo_alloc_dtor(self, builder, size, dtor, dtor2=None, ownerobj=None):
         self._require_nrt()
+        dtor2 = dtor2 or self._define_pyobject_dtor(builder)
+        ownerobj = ownerobj or ir.Constant(cgutils.voidptr_t, None)
 
         mod = builder.module
         fnty = ir.FunctionType(cgutils.voidptr_t,
-                               [cgutils.intp_t, cgutils.voidptr_t])
+                               [cgutils.intp_t, cgutils.voidptr_t, cgutils.voidptr_t, cgutils.voidptr_t])
         fn = mod.get_or_insert_function(fnty,
-                                        name="NRT_MemInfo_alloc_dtor_safe")
+                                        name="NRT_MemInfo_alloc_dtor")
         fn.return_value.add_attribute("noalias")
         return builder.call(fn, [size,
-                                 builder.bitcast(dtor, cgutils.voidptr_t)])
+                                 builder.bitcast(dtor, cgutils.voidptr_t),
+                                 builder.bitcast(dtor2, cgutils.voidptr_t),
+                                 builder.bitcast(ownerobj, cgutils.voidptr_t)])
 
     def meminfo_alloc_aligned(self, builder, size, align):
         """
@@ -81,7 +80,7 @@ class NRTContext(object):
         u32 = ir.IntType(32)
         fnty = ir.FunctionType(cgutils.voidptr_t, [cgutils.intp_t, u32])
         fn = mod.get_or_insert_function(fnty,
-                                        name="NRT_MemInfo_alloc_safe_aligned")
+                                        name="NRT_MemInfo_alloc_aligned")
         fn.return_value.add_attribute("noalias")
         if isinstance(align, int):
             align = self._context.get_constant(types.uint32, align)
@@ -89,7 +88,7 @@ class NRTContext(object):
             assert align.type == u32, "align must be a uint32"
         return builder.call(fn, [size, align])
 
-    def meminfo_new_varsize(self, builder, size):
+    def meminfo_new_varsize(self, builder, size, ownerobj=None):
         """
         Allocate a MemInfo pointing to a variable-sized data area.  The area
         is separately allocated (i.e. two allocations are made) so that
@@ -97,27 +96,28 @@ class NRTContext(object):
 
         A pointer to the MemInfo is returned.
         """
-        self._require_nrt()
+        return self.meminfo_new_varsize_dtor(
+            builder, size, dtor=ir.Constant(cgutils.voidptr_t, None), ownerobj=ownerobj
+        )
 
-        mod = builder.module
-        fnty = ir.FunctionType(cgutils.voidptr_t, [cgutils.intp_t])
-        fn = mod.get_or_insert_function(fnty, name="NRT_MemInfo_new_varsize")
-        fn.return_value.add_attribute("noalias")
-        return builder.call(fn, [size])
-
-    def meminfo_new_varsize_dtor(self, builder, size, dtor):
+    def meminfo_new_varsize_dtor(self, builder, size, dtor, dtor2=None, ownerobj=None):
         """
         Like meminfo_new_varsize() but also set the destructor for
         cleaning up references to objects inside the allocation.
         """
         self._require_nrt()
+        dtor2 = dtor2 or self._define_pyobject_dtor(builder)
+        ownerobj = ownerobj or ir.Constant(cgutils.voidptr_t, None)
 
         mod = builder.module
         fnty = ir.FunctionType(cgutils.voidptr_t,
-                               [cgutils.intp_t, cgutils.voidptr_t])
+                               [cgutils.intp_t, cgutils.voidptr_t, cgutils.voidptr_t, cgutils.voidptr_t])
         fn = mod.get_or_insert_function(
             fnty, name="NRT_MemInfo_new_varsize_dtor")
-        return builder.call(fn, [size, dtor])
+        return builder.call(fn, [size,
+                                 builder.bitcast(dtor, cgutils.voidptr_t),
+                                 builder.bitcast(dtor2, cgutils.voidptr_t),
+                                 builder.bitcast(ownerobj, cgutils.voidptr_t)])
 
     def meminfo_varsize_alloc(self, builder, meminfo, size):
         """
@@ -154,6 +154,33 @@ class NRTContext(object):
         fn = mod.get_or_insert_function(fnty, name="NRT_MemInfo_varsize_free")
         return builder.call(fn, (meminfo, ptr))
 
+    def _define_pyobject_dtor(self, builder):
+        "Define the destructor if not already defined"
+        context = self._context
+
+        mod = builder.module
+        # Declare dtor
+        fnty = ir.FunctionType(ir.VoidType(), [cgutils.voidptr_t, cgutils.intp_t, cgutils.voidptr_t])
+        fn = mod.get_or_insert_function(fnty, name='.dtor.nrt.python')
+        if not fn.is_declaration:
+            # End early if the dtor is already defined
+            return fn
+        fn.linkage = 'internal'
+        # Populate the dtor
+        builder = ir.IRBuilder(fn.append_basic_block())
+        pyapi = context.get_python_api(builder)
+        ownerobj = fn.args[2]  # void*
+
+        with builder.if_then(cgutils.is_not_null(builder, ownerobj)):
+            gil = pyapi.gil_ensure()
+            pyapi.object_reset_private_data(ownerobj)   # reset private data
+            pyapi.decref(ownerobj)                      # decref the ownerobj
+            pyapi.gil_release(gil)
+
+        builder.ret_void()
+
+        return fn
+
     def _call_varsize_alloc(self, builder, meminfo, size, funcname):
         self._require_nrt()
 
@@ -177,6 +204,20 @@ class NRTContext(object):
         mod = builder.module
         fn = mod.get_or_insert_function(meminfo_data_ty,
                                         name="NRT_MemInfo_data_fast")
+        return builder.call(fn, [meminfo])
+
+    def meminfo_ownerobj(self, builder, meminfo):
+        """
+        Given a MemInfo pointer, return a PyObject* to the owner object.
+        This works for MemInfos allocated with all the above methods.
+        """
+        self._require_nrt()
+
+        from numba.runtime.nrtdynmod import meminfo_data_ty
+
+        mod = builder.module
+        fn = mod.get_or_insert_function(meminfo_data_ty,
+                                        name="NRT_MemInfo_ownerobj_fast")
         return builder.call(fn, [meminfo])
 
     def _call_incref_decref(self, builder, root_type, typ, value,

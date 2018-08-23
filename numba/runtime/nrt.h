@@ -9,14 +9,26 @@ All functions described here are threadsafe.
 #include <stdlib.h>
 #include <stdio.h>
 #include "../_numba_common.h"
+#include "../_pymodule.h"
 
 /* Debugging facilities - enabled at compile-time */
 /* #undef NDEBUG */
+
+/*
+ * The "safe" NRT_MemInfo_alloc performs additional steps to help debug
+ * memory errors.
+ * It is guaranteed to:
+ *   - zero-fill to the memory region after allocation and before deallocation.
+ *   - may do more in the future
+ */
+#define NRT_ALLOC_SAFE
 #if 0
 #   define NRT_Debug(X) X
 #else
 #   define NRT_Debug(X) if (0) { X; }
 #endif
+
+#define MEMINFO_VARSIZE 0x1
 
 /* TypeDefs */
 typedef void (*NRT_dtor_function)(void *ptr, size_t size, void *info);
@@ -96,11 +108,13 @@ size_t NRT_MemSys_get_stats_mi_free(void);
  */
 VISIBILITY_HIDDEN
 NRT_MemInfo* NRT_MemInfo_new(void *data, size_t size,
-                             NRT_dtor_function dtor, void *dtor_info);
+                             NRT_dtor_function dtor, NRT_dtor_function dtor2,
+                             void *ownerobj);
 
 VISIBILITY_HIDDEN
 void NRT_MemInfo_init(NRT_MemInfo *mi, void *data, size_t size,
-                      NRT_dtor_function dtor, void *dtor_info);
+                      NRT_dtor_function dtor, NRT_dtor_function dtor2,
+                      void *ownerobj);
 
 /*
  * Returns the refcount of a MemInfo or (size_t)-1 if error.
@@ -113,23 +127,16 @@ size_t NRT_MemInfo_refcount(NRT_MemInfo *mi);
  * that describes the allocation
  */
 VISIBILITY_HIDDEN
-NRT_MemInfo *NRT_MemInfo_alloc(size_t size);
+NRT_MemInfo *NRT_MemInfo_alloc(size_t size, void *ownerobj);
+
 
 /*
- * The "safe" NRT_MemInfo_alloc performs additional steps to help debug
- * memory errors.
- * It is guaranteed to:
- *   - zero-fill to the memory region after allocation and before deallocation.
- *   - may do more in the future
+ * Similar to NRT_MemInfo_alloc but with a custom dtors. dtor is supposed to be independend of the Python runtime,
+ * dtor2 should only do Python specific clean-up. Currently, dtor2 is called before dtor but maybe it might make sense
+ * to batch the Python clean-up. Hence dtor2 should probably only use ownerobj
  */
 VISIBILITY_HIDDEN
-NRT_MemInfo *NRT_MemInfo_alloc_safe(size_t size);
-
-/*
- * Similar to NRT_MemInfo_alloc_safe but with a custom dtor.
- */
-VISIBILITY_HIDDEN
-NRT_MemInfo* NRT_MemInfo_alloc_dtor_safe(size_t size, NRT_dtor_function dtor);
+NRT_MemInfo* NRT_MemInfo_alloc_dtor(size_t size, NRT_dtor_function dtor, NRT_dtor_function dtor2, void *ownerobj);
 
 /*
  * Aligned versions of the NRT_MemInfo_alloc and NRT_MemInfo_alloc_safe.
@@ -137,8 +144,6 @@ NRT_MemInfo* NRT_MemInfo_alloc_dtor_safe(size_t size, NRT_dtor_function dtor);
  */
 VISIBILITY_HIDDEN
 NRT_MemInfo *NRT_MemInfo_alloc_aligned(size_t size, unsigned align);
-VISIBILITY_HIDDEN
-NRT_MemInfo *NRT_MemInfo_alloc_safe_aligned(size_t size, unsigned align);
 
 /*
  * Internal API.
@@ -161,7 +166,7 @@ void NRT_MemInfo_release(NRT_MemInfo* mi);
 
 /*
  * Internal/Compiler API.
- * Invoke the registered destructor of a MemInfo.
+ * Invoke the registered destructors of a MemInfo.
  */
 VISIBILITY_HIDDEN
 void NRT_MemInfo_call_dtor(NRT_MemInfo *mi);
@@ -178,14 +183,18 @@ void* NRT_MemInfo_data(NRT_MemInfo* mi);
 VISIBILITY_HIDDEN
 size_t NRT_MemInfo_size(NRT_MemInfo* mi);
 
-
+/*
+ * Returns the owner object
+ */
+VISIBILITY_HIDDEN
+void *NRT_MemInfo_ownerobj(NRT_MemInfo* mi);
 /*
  * NRT API for resizable buffers.
  */
 VISIBILITY_HIDDEN
-NRT_MemInfo *NRT_MemInfo_new_varsize(size_t size);
+NRT_MemInfo *NRT_MemInfo_new_varsize(size_t size, void *ownerobj);
 VISIBILITY_HIDDEN
-NRT_MemInfo *NRT_MemInfo_new_varsize_dtor(size_t size, NRT_dtor_function dtor);
+NRT_MemInfo *NRT_MemInfo_new_varsize_dtor(size_t size, NRT_dtor_function dtor, NRT_dtor_function dtor2, void *ownerobj);
 VISIBILITY_HIDDEN
 void *NRT_MemInfo_varsize_alloc(NRT_MemInfo *mi, size_t size);
 VISIBILITY_HIDDEN

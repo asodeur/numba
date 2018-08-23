@@ -89,8 +89,10 @@ class _Runtime(object):
         See `NRT_MemInfo_alloc_safe()` in "nrt.h" for details.
         """
         self._init_guard()
-        if safe:
-            mi = _nrt.meminfo_alloc_safe(size)
+        if safe and not _nrt.NRT_ALLOC_SAFE:
+            raise DeprecationWarning(
+                "safe allocation is now controled by a compile-time switch in nrt.h, this was not set."
+            )
         else:
             mi = _nrt.meminfo_alloc(size)
         return MemInfo(mi)

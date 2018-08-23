@@ -17,21 +17,24 @@
  * Create a NRT MemInfo for data owned by a PyObject.
  */
 
+/* if this dtor could be moved into .context.NRTContext (ie the *adapt* func would
+   need to move as well, NRT_MemInfo could work wit a single dtor ....)
+*/
 static void
-pyobject_dtor(void *ptr, size_t size, void* info) {
+pyobject_dtor(void *ptr, size_t size, void* ownerobj) {
     PyGILState_STATE gstate;
-    PyObject *ownerobj = info;
 
-    gstate = PyGILState_Ensure();   /* ensure the GIL */
-    Py_DECREF(ownerobj);            /* release the python object */
-    PyGILState_Release(gstate);     /* release the GIL */
+    gstate = PyGILState_Ensure();       // ensure the GIL
+    Py_DECREF((PyObject*) ownerobj);    // release the python object
+    PyGILState_Release(gstate);         // release the GIL
 }
+
 
 static NRT_MemInfo *
 meminfo_new_from_pyobject(void *data, PyObject *ownerobj) {
     size_t dummy_size = 0;
     Py_INCREF(ownerobj);
-    return NRT_MemInfo_new(data, dummy_size, pyobject_dtor, ownerobj);
+    return NRT_MemInfo_new(data, dummy_size, NULL, pyobject_dtor, ownerobj);
 }
 
 /*

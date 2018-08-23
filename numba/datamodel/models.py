@@ -809,6 +809,7 @@ class SetModel(StructModel):
         ]
         super(SetModel, self).__init__(dmm, fe_type, members)
 
+
 @register_default(types.SetIter)
 class SetIterModel(StructModel):
     def __init__(self, dmm, fe_type):

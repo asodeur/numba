@@ -16,9 +16,11 @@ typedef int (*atomic_meminfo_cas_func)(void **ptr, void *cmp,
 struct MemInfo {
     size_t            refct;
     NRT_dtor_function dtor;
-    void              *dtor_info;
+    NRT_dtor_function dtor2;
     void              *data;
     size_t            size;    /* only used for NRT allocated memory */
+    void          *ownerobj;
+    size_t            flags;
 };
 
 
@@ -169,23 +171,27 @@ void NRT_MemSys_set_atomic_cas_stub(void) {
  * The MemInfo structure.
  */
 
-void NRT_MemInfo_init(NRT_MemInfo *mi,void *data, size_t size,
-                      NRT_dtor_function dtor, void *dtor_info)
+void NRT_MemInfo_init(NRT_MemInfo *mi, void *data, size_t size,
+                      NRT_dtor_function dtor, NRT_dtor_function dtor2,
+                      void *ownerobj)
 {
     mi->refct = 1;  /* starts with 1 refct */
+    mi->flags = 0;
     mi->dtor = dtor;
-    mi->dtor_info = dtor_info;
+    mi->dtor2 = dtor2;
     mi->data = data;
     mi->size = size;
+    mi->ownerobj = ownerobj;
     /* Update stats */
     TheMSys.atomic_inc(&TheMSys.stats_mi_alloc);
 }
 
 NRT_MemInfo *NRT_MemInfo_new(void *data, size_t size,
-                             NRT_dtor_function dtor, void *dtor_info)
+                             NRT_dtor_function dtor, NRT_dtor_function dtor2,
+                             void *ownerobj)
 {
     NRT_MemInfo *mi = NRT_Allocate(sizeof(NRT_MemInfo));
-    NRT_MemInfo_init(mi, data, size, dtor, dtor_info);
+    NRT_MemInfo_init(mi, data, size, dtor, dtor2, ownerobj);
     return mi;
 }
 
@@ -199,13 +205,6 @@ size_t NRT_MemInfo_refcount(NRT_MemInfo *mi) {
 }
 
 static
-void nrt_internal_dtor_safe(void *ptr, size_t size, void *info) {
-    NRT_Debug(nrt_debug_print("nrt_internal_dtor_safe %p, %p\n", ptr, info));
-    /* See NRT_MemInfo_alloc_safe() */
-    memset(ptr, 0xDE, MIN(size, 256));
-}
-
-static
 void *nrt_allocate_meminfo_and_data(size_t size, NRT_MemInfo **mi_out) {
     NRT_MemInfo *mi;
     char *base = NRT_Allocate(sizeof(NRT_MemInfo) + size);
@@ -214,43 +213,17 @@ void *nrt_allocate_meminfo_and_data(size_t size, NRT_MemInfo **mi_out) {
     return base + sizeof(NRT_MemInfo);
 }
 
-
-static
-void nrt_internal_custom_dtor_safe(void *ptr, size_t size, void *info) {
-    NRT_dtor_function dtor = info;
-    NRT_Debug(nrt_debug_print("nrt_internal_custom_dtor_safe %p, %p\n",
-                              ptr, info));
-    if (dtor) {
-        dtor(ptr, size, NULL);
-    }
-
-    nrt_internal_dtor_safe(ptr, size, NULL);
+NRT_MemInfo *NRT_MemInfo_alloc(size_t size, void *ownerobj) {
+    return NRT_MemInfo_alloc_dtor(size, NULL, NULL, ownerobj);
 }
 
-
-NRT_MemInfo *NRT_MemInfo_alloc(size_t size) {
+NRT_MemInfo* NRT_MemInfo_alloc_dtor(size_t size, NRT_dtor_function dtor, NRT_dtor_function lr_dtor, void *ownerobj) {
     NRT_MemInfo *mi;
     void *data = nrt_allocate_meminfo_and_data(size, &mi);
-    NRT_Debug(nrt_debug_print("NRT_MemInfo_alloc %p\n", data));
-    NRT_MemInfo_init(mi, data, size, NULL, NULL);
+    NRT_Debug(nrt_debug_print("NRT_MemInfo_alloc_dtor data=%p, size=%zu, ownerobj=%p\n", data, size, ownerobj));
+    NRT_MemInfo_init(mi, data, size, dtor, lr_dtor, ownerobj);
     return mi;
 }
-
-NRT_MemInfo *NRT_MemInfo_alloc_safe(size_t size) {
-    return NRT_MemInfo_alloc_dtor_safe(size, NULL);
-}
-
-NRT_MemInfo* NRT_MemInfo_alloc_dtor_safe(size_t size, NRT_dtor_function dtor) {
-    NRT_MemInfo *mi;
-    void *data = nrt_allocate_meminfo_and_data(size, &mi);
-    /* Only fill up a couple cachelines with debug markers, to minimize
-       overhead. */
-    memset(data, 0xCB, MIN(size, 256));
-    NRT_Debug(nrt_debug_print("NRT_MemInfo_alloc_dtor_safe %p %zu\n", data, size));
-    NRT_MemInfo_init(mi, data, size, nrt_internal_custom_dtor_safe, dtor);
-    return mi;
-}
-
 
 static
 void *nrt_allocate_meminfo_and_data_align(size_t size, unsigned align,
@@ -272,24 +245,19 @@ void *nrt_allocate_meminfo_and_data_align(size_t size, unsigned align,
 NRT_MemInfo *NRT_MemInfo_alloc_aligned(size_t size, unsigned align) {
     NRT_MemInfo *mi;
     void *data = nrt_allocate_meminfo_and_data_align(size, align, &mi);
-    NRT_Debug(nrt_debug_print("NRT_MemInfo_alloc_aligned %p\n", data));
-    NRT_MemInfo_init(mi, data, size, NULL, NULL);
-    return mi;
-}
-
-NRT_MemInfo *NRT_MemInfo_alloc_safe_aligned(size_t size, unsigned align) {
-    NRT_MemInfo *mi;
-    void *data = nrt_allocate_meminfo_and_data_align(size, align, &mi);
-    /* Only fill up a couple cachelines with debug markers, to minimize
-       overhead. */
-    memset(data, 0xCB, MIN(size, 256));
-    NRT_Debug(nrt_debug_print("NRT_MemInfo_alloc_safe_aligned %p %zu\n",
+    NRT_Debug(nrt_debug_print("NRT_MemInfo_alloc_aligned %p %zu\n",
                               data, size));
-    NRT_MemInfo_init(mi, data, size, nrt_internal_dtor_safe, (void*)size);
+    NRT_MemInfo_init(mi, data, size, NULL, NULL, NULL);
     return mi;
 }
 
 void NRT_MemInfo_destroy(NRT_MemInfo *mi) {
+    #ifdef NRT_ALLOC_SAFE
+        /* mi->data has already been overwritten in  NRT_MemInfo_call_dtor,
+           is this too paranoid?
+        */
+        memset(mi, 0xDE, sizeof(NRT_MemInfo));
+    #endif
     NRT_Free(mi);
     TheMSys.atomic_inc(&TheMSys.stats_mi_free);
 }
@@ -301,11 +269,23 @@ void NRT_MemInfo_acquire(NRT_MemInfo *mi) {
     TheMSys.atomic_inc(&mi->refct);
 }
 
+
 void NRT_MemInfo_call_dtor(NRT_MemInfo *mi) {
-    NRT_Debug(nrt_debug_print("nrt_meminfo_call_dtor %p\n", mi));
-    if (mi->dtor && !TheMSys.shutting)
+    NRT_Debug(nrt_debug_print("nrt_meminfo_call_dtor meminfo=%p, data=%p, ownerobj=%p\n", mi, mi->data, mi->ownerobj));
+    if (mi->dtor2 && !TheMSys.shutting)
         /* We have a destructor and the system is not shutting down */
-        mi->dtor(mi->data, mi->size, mi->dtor_info);
+        mi->dtor2(mi->data, mi->size, mi->ownerobj);
+    if (mi->dtor && !TheMSys.shutting)
+        mi->dtor(mi->data, mi->size, mi->ownerobj);
+
+    #ifdef NRT_ALLOC_SAFE
+        memset(mi->data, 0xDE, MIN(mi->size, 256));
+    #endif
+
+    if (mi->flags & MEMINFO_VARSIZE) {
+        NRT_Debug(nrt_debug_print("nrt_buffer_dtor %p\n", mi->data));
+        NRT_Free(mi->data);
+    }
     /* Clear and release MemInfo */
     NRT_MemInfo_destroy(mi);
 }
@@ -328,6 +308,10 @@ size_t NRT_MemInfo_size(NRT_MemInfo* mi) {
     return mi->size;
 }
 
+void *NRT_MemInfo_ownerobj(NRT_MemInfo* mi) {
+    return mi->ownerobj;
+}
+
 
 void NRT_MemInfo_dump(NRT_MemInfo *mi, FILE *out) {
     fprintf(out, "MemInfo %p refcount %zu\n", mi, mi->refct);
@@ -336,46 +320,31 @@ void NRT_MemInfo_dump(NRT_MemInfo *mi, FILE *out) {
 /*
  * Resizable buffer API.
  */
-
-static void
-nrt_varsize_dtor(void *ptr, size_t size, void *info) {
-    NRT_Debug(nrt_debug_print("nrt_buffer_dtor %p\n", ptr));
-    if (info) {
-        /* call element dtor */
-        typedef void dtor_fn_t(void *ptr);
-        dtor_fn_t *dtor = info;
-        dtor(ptr);
-    }
-    NRT_Free(ptr);
-}
-
-NRT_MemInfo *NRT_MemInfo_new_varsize(size_t size)
+NRT_MemInfo *NRT_MemInfo_new_varsize_dtor(size_t size, NRT_dtor_function dtor, NRT_dtor_function dtor2, void *ownerobj)
 {
     NRT_MemInfo *mi;
     void *data = NRT_Allocate(size);
     if (data == NULL)
         return NULL;
 
-    mi = NRT_MemInfo_new(data, size, nrt_varsize_dtor, NULL);
+    mi = NRT_MemInfo_new(data, size, dtor, dtor2, ownerobj);
+    mi->flags = mi->flags | MEMINFO_VARSIZE;
     NRT_Debug(nrt_debug_print("NRT_MemInfo_varsize_alloc size=%zu "
-                              "-> meminfo=%p, data=%p\n", size, mi, data));
+                              "-> meminfo=%p, data=%p, ownerobj=%p\n", size, mi, data, mi->ownerobj));
     return mi;
 }
 
-NRT_MemInfo *NRT_MemInfo_new_varsize_dtor(size_t size, NRT_dtor_function dtor) {
-    NRT_MemInfo *mi = NRT_MemInfo_new_varsize(size);
-    if (mi) {
-        mi->dtor_info = dtor;
-    }
+NRT_MemInfo *NRT_MemInfo_new_varsize(size_t size, void *ownerobj) {
+    NRT_MemInfo *mi = NRT_MemInfo_new_varsize_dtor(size, NULL, NULL, ownerobj);
     return mi;
 }
 
 void *NRT_MemInfo_varsize_alloc(NRT_MemInfo *mi, size_t size)
 {
-    if (mi->dtor != nrt_varsize_dtor) {
+    if (!(mi->flags & MEMINFO_VARSIZE)) {
         nrt_fatal_error("ERROR: NRT_MemInfo_varsize_alloc called "
                         "with a non varsize-allocated meminfo");
-        return NULL;  /* unreachable */
+        return NULL;  //unreachable
     }
     mi->data = NRT_Allocate(size);
     if (mi->data == NULL)
@@ -388,10 +357,10 @@ void *NRT_MemInfo_varsize_alloc(NRT_MemInfo *mi, size_t size)
 
 void *NRT_MemInfo_varsize_realloc(NRT_MemInfo *mi, size_t size)
 {
-    if (mi->dtor != nrt_varsize_dtor) {
+    if (!(mi->flags & MEMINFO_VARSIZE)) {
         nrt_fatal_error("ERROR: NRT_MemInfo_varsize_realloc called "
                         "with a non varsize-allocated meminfo");
-        return NULL;  /* unreachable */
+        return NULL;  // unreachable
     }
     mi->data = NRT_Reallocate(mi->data, size);
     if (mi->data == NULL)
@@ -416,6 +385,11 @@ void NRT_MemInfo_varsize_free(NRT_MemInfo *mi, void *ptr)
 void* NRT_Allocate(size_t size) {
     void *ptr = TheMSys.allocator.malloc(size);
     NRT_Debug(nrt_debug_print("NRT_Allocate bytes=%zu ptr=%p\n", size, ptr));
+    #ifdef NRT_ALLOC_SAFE
+        /* Only fill up a couple cachelines with debug markers, to minimize
+           overhead. */
+        memset(ptr, 0xCB, MIN(size, 256));
+    #endif
     TheMSys.atomic_inc(&TheMSys.stats_alloc);
     return ptr;
 }

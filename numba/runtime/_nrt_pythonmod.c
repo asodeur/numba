@@ -95,14 +95,14 @@ meminfo_alloc(PyObject *self, PyObject *args) {
     if (!PyArg_ParseTuple(args, "n", &size)) {
         return NULL;
     }
-    mi = NRT_MemInfo_alloc(size);
+    mi = NRT_MemInfo_alloc(size, NULL);
     return PyLong_FromVoidPtr(mi);
 }
 
 /*
  * Like meminfo_alloc but set memory to zero after allocation and before
  * deallocation.
- */
+
 static PyObject *
 meminfo_alloc_safe(PyObject *self, PyObject *args) {
     NRT_MemInfo *mi;
@@ -110,9 +110,10 @@ meminfo_alloc_safe(PyObject *self, PyObject *args) {
     if (!PyArg_ParseTuple(args, "n", &size)) {
         return NULL;
     }
-    mi = NRT_MemInfo_alloc_safe(size);
+    mi = NRT_MemInfo_alloc_safe(size, NULL);
     return PyLong_FromVoidPtr(mi);
 }
+*/
 
 static PyMethodDef ext_methods[] = {
 #define declmethod(func) { #func , ( PyCFunction )func , METH_VARARGS , NULL }
@@ -127,7 +128,6 @@ static PyMethodDef ext_methods[] = {
     declmethod_noargs(memsys_get_stats_mi_free),
     declmethod(meminfo_new),
     declmethod(meminfo_alloc),
-    declmethod(meminfo_alloc_safe),
     { NULL },
 #undef declmethod
 };
@@ -157,10 +157,8 @@ declmethod(adapt_ndarray_from_python);
 declmethod(adapt_ndarray_to_python);
 declmethod(adapt_buffer_from_python);
 declmethod(MemInfo_alloc);
-declmethod(MemInfo_alloc_safe);
 declmethod(MemInfo_alloc_aligned);
-declmethod(MemInfo_alloc_safe_aligned);
-declmethod(MemInfo_alloc_dtor_safe);
+declmethod(MemInfo_alloc_dtor);
 declmethod(MemInfo_call_dtor);
 declmethod(MemInfo_new_varsize);
 declmethod(MemInfo_new_varsize_dtor);
@@ -193,6 +191,12 @@ MOD_INIT(_nrt_python) {
     PyModule_AddObject(m, "_MemInfo", (PyObject *) (&MemInfoType));
 
     PyModule_AddObject(m, "c_helpers", build_c_helpers_dict());
+
+    #ifdef NRT_ALLOC_SAFE
+        PyModule_AddIntConstant(m, "NRT_ALLOC_SAFE", 1);
+    #else
+        PyModule_AddIntConstant(m, "NRT_ALLOC_SAFE", 0);
+    #endif
 
     return MOD_SUCCESS_VAL(m);
 }

@@ -439,6 +439,8 @@ def ctor_impl(context, builder, sig, args):
         builder,
         context.get_constant(types.uintp, alloc_size),
         imp_dtor(context, builder.module, inst_typ),
+        # jitclass does not have an ownerobj as meminfo will destroyed by Python-side __del__
+        dtor2=context.get_constant_null(types.pyobject)     # TODO: is there a better way to get (void*) NULL?
     )
     data_pointer = context.nrt.meminfo_data(builder, meminfo)
     data_pointer = builder.bitcast(data_pointer,

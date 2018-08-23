@@ -366,6 +366,13 @@ def reflect_dual(l, ll):
     l.append(ll.pop())
     return l is ll
 
+def reflect_nested(l, ll):
+    x = l.pop()
+    y = l.pop()
+    l[0] = y
+    l.extend(ll)
+    return l, x, y
+
 
 class TestLists(MemoryLeakMixin, TestCase):
 
@@ -871,6 +878,9 @@ class TestListReflection(MemoryLeakMixin, TestCase):
         cfunc(l)
         self.assertEqual([id(x) for x in l], ids)
 
+    def test_reflect_nested(self):
+        self.check_reflection(reflect_nested)
+
 
 class ManagedListTestCase(MemoryLeakMixin, TestCase):
 
@@ -1098,7 +1108,7 @@ class TestListOfList(ManagedListTestCase):
 
         self.compile_and_test(pyfunc)
 
-    @expect_reflection_failure
+    #@expect_reflection_failure
     def test_heterogeneous_list_error(self):
         def pyfunc(x):
             return x[1]
@@ -1109,10 +1119,6 @@ class TestListOfList(ManagedListTestCase):
         l3 = [[np.zeros(i) for i in range(5)], [(1,)]]
         l4 = [[1], [{1}]]
         l5 = [[1], [{'a': 1}]]
-
-        # TODO: this triggers a reflection error.
-        # Remove this line when nested reflection is supported
-        cfunc(l2)
 
         # error_cases
         with self.assertRaises(TypeError) as raises:
@@ -1129,7 +1135,7 @@ class TestListOfList(ManagedListTestCase):
 
         self.assertIn(
             ("reflected list(array(float64, 1d, C)) != "
-             "reflected list((int64 x 1))"),
+             "reflected list(tuple(int64 x 1))"),
             str(raises.exception)
             )
 
@@ -1147,7 +1153,7 @@ class TestListOfList(ManagedListTestCase):
             str(raises.exception)
             )
 
-    @expect_reflection_failure
+    #@expect_reflection_failure
     def test_list_of_list_reflected(self):
         def pyfunc(l1, l2):
             l1.append(l2)
@@ -1162,7 +1168,7 @@ class TestListOfList(ManagedListTestCase):
         cfunc(*got)
         self.assertEqual(expect, got)
 
-    @expect_reflection_failure
+    #@expect_reflection_failure
     def test_heterogeneous_list(self):
         def pyfunc(x):
             return x[1]
@@ -1173,15 +1179,12 @@ class TestListOfList(ManagedListTestCase):
         l1_got = cfunc(l1)
         self.assertPreciseEqual(pyfunc(l1), l1_got)
 
-    @expect_reflection_failure
+    #@expect_reflection_failure
     def test_c01(self):
         def bar(x):
             return x.pop()
 
         r = [[np.zeros(0)], [np.zeros(10)*1j]]
-        # TODO: this triggers a reflection error.
-        # Remove this line when nested reflection is supported
-        self.compile_and_test(bar, r)
 
         with self.assertRaises(TypeError) as raises:
             self.compile_and_test(bar, r)
@@ -1241,7 +1244,7 @@ class TestListOfList(ManagedListTestCase):
             )
 
     @unittest.skipUnless(utils.IS_PY3, "Py3 only due to ordering of error")
-    @expect_reflection_failure
+    #@expect_reflection_failure
     def test_c05(self):
         def bar(x):
             f = x
@@ -1263,7 +1266,7 @@ class TestListOfList(ManagedListTestCase):
             self.compile_and_test(bar, r)
         self.assertIn("invalid setitem with value", str(raises.exception))
 
-    @expect_reflection_failure
+    #@expect_reflection_failure
     def test_c07(self):
         self.disable_leak_check()
 
@@ -1299,7 +1302,7 @@ class TestListOfList(ManagedListTestCase):
             self.compile_and_test(bar, r)
         self.assertIn("invalid setitem with value", str(raises.exception))
 
-    @expect_reflection_failure
+    #@expect_reflection_failure
     def test_c10(self):
         def bar(x):
             x[0], x[1] = x[1], x[0]
@@ -1308,7 +1311,7 @@ class TestListOfList(ManagedListTestCase):
         r = [[1, 2, 3], [4, 5, 6]]
         self.compile_and_test(bar, r)
 
-    @expect_reflection_failure
+    #@expect_reflection_failure
     def test_c11(self):
         def bar(x):
             x[:] = x[::-1]
@@ -1324,6 +1327,16 @@ class TestListOfList(ManagedListTestCase):
 
         r = [x for x in range(10)]
         self.compile_and_test(bar, r)
+
+    def test_c13(self):
+        def bar(x, y):
+            x.append(y)
+
+            return x
+
+        u = [[np.zeros(10)]]
+        v = [np.zeros(11)]
+        self.compile_and_test(bar, u, v)
 
 
 class Item(object):
@@ -1398,4 +1411,6 @@ class TestListAndJitClasses(ManagedListTestCase):
 
 
 if __name__ == '__main__':
-    unittest.main()
+    #unittest.main()
+    tc = TestListOfList('test_c01')
+    tc.debug()

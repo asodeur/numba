@@ -521,7 +521,7 @@ def box_list(typ, val, c):
     Convert native list *val* to a list object.
     """
     list = listobj.ListInstance(c.context, c.builder, typ, val)
-    obj = list.parent
+    obj = c.context.nrt.meminfo_ownerobj(c.builder, list.meminfo)  # list.parent
     res = cgutils.alloca_once_value(c.builder, obj)
     with c.builder.if_else(cgutils.is_not_null(c.builder, obj)) as (has_parent, otherwise):
         with has_parent:
@@ -622,7 +622,7 @@ def _python_list_to_native(typ, obj, c, size, listptr, errorptr):
         c.pyapi.decref(typobj)
 
     # Allocate a new native list
-    ok, list = listobj.ListInstance.allocate_ex(c.context, c.builder, typ, size)
+    ok, list = listobj.ListInstance.allocate_ex(c.context, c.builder, typ, obj, size)
     with c.builder.if_else(ok, likely=True) as (if_ok, if_not_ok):
         with if_ok:
             list.size = size
@@ -646,8 +646,7 @@ def _python_list_to_native(typ, obj, c, size, listptr, errorptr):
                         # The reference is borrowed so incref=False
                         list.setitem(loop.index, native.value, incref=False)
                     c.pyapi.decref(expected_typobj)
-            if typ.reflected:
-                list.parent = obj
+
             # Stuff meminfo pointer into the Python object for
             # later reuse.
             with c.builder.if_then(c.builder.not_(c.builder.load(errorptr)),
@@ -661,7 +660,10 @@ def _python_list_to_native(typ, obj, c, size, listptr, errorptr):
 
     # If an error occurred, drop the whole native list
     with c.builder.if_then(c.builder.load(errorptr)):
-        c.context.nrt.decref(c.builder, typ, list.value)
+        # the dtors getting triggered by nrt.decref might wipe out
+        # the current error, saving it ...
+        with c.pyapi.err_push():
+            c.context.nrt.decref(c.builder, typ, list.value)
 
 
 @unbox(types.List)
@@ -687,8 +689,6 @@ def unbox_list(typ, obj, c):
             # List was previously unboxed => reuse meminfo
             list = listobj.ListInstance.from_meminfo(c.context, c.builder, typ, ptr)
             list.size = size
-            if typ.reflected:
-                list.parent = obj
             c.builder.store(list.value, listptr)
 
         with otherwise:
@@ -710,13 +710,24 @@ def reflect_list(typ, val, c):
     """
     if not typ.reflected:
         return
-    if typ.dtype.reflected:
-        msg = "cannot reflect element of reflected container: {}\n".format(typ)
-        raise TypeError(msg)
+    # if typ.dtype.reflected:
+    #     msg = "cannot reflect element of reflected container: {}\n".format(typ)
+    #     raise TypeError(msg)
 
     list = listobj.ListInstance(c.context, c.builder, typ, val)
+
+    if typ.dtype.reflected:
+        with cgutils.for_range(c.builder, list.size) as loop:
+            item = list.getitem(loop.index)
+            ok = c.reflect(typ.dtype, item)
+
+            with c.builder.if_then(cgutils.is_false(c.builder, ok)):
+                c.pyapi.err_set_string("PyExc_TypeError",
+                                       "failed to reflect nested items")
+                loop.do_break()
+
     with c.builder.if_then(list.dirty, likely=False):
-        obj = list.parent
+        obj = c.context.nrt.meminfo_ownerobj(c.builder, list.meminfo) # list.parent
         size = c.pyapi.list_size(obj)
         new_size = list.size
         diff = c.builder.sub(new_size, size)
