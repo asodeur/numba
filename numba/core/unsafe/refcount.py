@@ -42,7 +42,7 @@ def dump_refcount(typingctx, obj):
                     ir.Constant(ir.IntType(32), config.CAST_RETURNS_NEW_REFS)
                 )
                 printed = cgutils.snprintf_stackbuffer(
-                    builder, 30, "%d".format(ty), refct_32bit,
+                    builder, 30, "%d [%p]", refct_32bit, miptr
                 )
                 pyapi.sys_write_stdout(printed)
 

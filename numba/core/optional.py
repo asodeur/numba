@@ -70,7 +70,7 @@ def optional_setattr(context, builder, sig, args, attr):
 
 
 @lower_cast(types.Optional, types.Optional, ref_type=(
-        RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED))
+    RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED))
 def optional_to_optional(context, builder, fromty, toty, val):
     """
     The handling of optional->optional cast must be special cased for
@@ -102,7 +102,7 @@ def optional_to_optional(context, builder, fromty, toty, val):
 
 
 @lower_cast(types.Any, types.Optional, ref_type=(
-        RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED))
+    RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED))
 def any_to_optional(context, builder, fromty, toty, val):
     if fromty == types.none:
         return context.make_optional_none(builder, toty.type)
@@ -112,7 +112,7 @@ def any_to_optional(context, builder, fromty, toty, val):
 
 
 @lower_cast(types.Optional, types.Any, ref_type=(
-        RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED))
+    RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED))
 @lower_cast(types.Optional, types.Boolean, ref_type=RefType.UNTRACKED)
 def optional_to_any(context, builder, fromty, toty, val):
     optval = context.make_helper(builder, fromty, value=val)
