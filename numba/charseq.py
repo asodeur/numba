@@ -7,6 +7,7 @@ from numba import types, cgutils, unicode
 from numba.extending import (overload, intrinsic, overload_method, lower_cast,
                              register_jitable)
 from numba.cgutils import is_nonelike
+from numba.targets.imputils import RefType
 
 # bytes and str arrays items are of type CharSeq and UnicodeCharSeq,
 # respectively.  See numpy/types/npytypes.py for CharSeq,
@@ -164,7 +165,7 @@ def unicode_charseq_get_value(a, i):
 #
 
 
-@lower_cast(types.Bytes, types.CharSeq)
+@lower_cast(types.Bytes, types.CharSeq, ref_type=RefType.BORROWED)
 def bytes_to_charseq(context, builder, fromty, toty, val):
     barr = cgutils.create_struct_proxy(fromty)(context, builder, value=val)
     src = builder.bitcast(barr.data, ir.IntType(8).as_pointer())
@@ -209,7 +210,7 @@ def _make_constant_bytes(context, builder, nbytes):
     return bstr
 
 
-@lower_cast(types.CharSeq, types.Bytes)
+@lower_cast(types.CharSeq, types.Bytes, ref_type=RefType.BORROWED)
 def charseq_to_bytes(context, builder, fromty, toty, val):
     bstr = _make_constant_bytes(context, builder, val.type.count)
     rawptr = cgutils.alloca_once_value(builder, value=val)
@@ -218,7 +219,7 @@ def charseq_to_bytes(context, builder, fromty, toty, val):
     return bstr
 
 
-@lower_cast(types.UnicodeType, types.Bytes)
+@lower_cast(types.UnicodeType, types.Bytes, ref_type=RefType.BORROWED)
 def unicode_to_bytes_cast(context, builder, fromty, toty, val):
     uni_str = cgutils.create_struct_proxy(fromty)(context, builder, value=val)
     src1 = builder.bitcast(uni_str.data, ir.IntType(8).as_pointer())
@@ -233,7 +234,7 @@ def unicode_to_bytes_cast(context, builder, fromty, toty, val):
 
     bstr = _make_constant_bytes(context, builder, src_length)
     cgutils.memcpy(builder, bstr.data, src1, bstr.nitems)
-    return bstr
+    return bstr._getvalue()
 
 
 @intrinsic
@@ -244,11 +245,11 @@ def _unicode_to_bytes(typingctx, s):
 
     def codegen(context, builder, signature, args):
         return unicode_to_bytes_cast(
-            context, builder, s, bytes_type, args[0])._getvalue()
+            context, builder, s, bytes_type, args[0])
     return sig, codegen
 
 
-@lower_cast(types.UnicodeType, types.UnicodeCharSeq)
+@lower_cast(types.UnicodeType, types.UnicodeCharSeq, ref_type=RefType.BORROWED)
 def unicode_to_unicode_charseq(context, builder, fromty, toty, val):
     uni_str = cgutils.create_struct_proxy(fromty)(context, builder, value=val)
     src1 = builder.bitcast(uni_str.data, ir.IntType(8).as_pointer())

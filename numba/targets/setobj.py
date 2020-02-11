@@ -1234,6 +1234,7 @@ def set_add(context, builder, sig, args):
 
     return context.get_dummy_value()
 
+
 @lower_builtin("set.discard", types.Set, types.Any)
 def set_discard(context, builder, sig, args):
     inst = SetInstance(context, builder, sig.args[0], args[0])
@@ -1408,6 +1409,7 @@ def set_isdisjoint(context, builder, sig, args):
 
     return inst.isdisjoint(other)
 
+
 @lower_builtin(operator.le, types.Set, types.Set)
 @lower_builtin("set.issubset", types.Set, types.Set)
 def set_issubset(context, builder, sig, args):
@@ -1415,6 +1417,7 @@ def set_issubset(context, builder, sig, args):
     other = SetInstance(context, builder, sig.args[1], args[1])
 
     return inst.issubset(other)
+
 
 @lower_builtin(operator.ge, types.Set, types.Set)
 @lower_builtin("set.issuperset", types.Set, types.Set)
@@ -1424,12 +1427,14 @@ def set_issuperset(context, builder, sig, args):
 
     return context.compile_internal(builder, superset_impl, sig, args)
 
+
 @lower_builtin(operator.eq, types.Set, types.Set)
 def set_isdisjoint(context, builder, sig, args):
     inst = SetInstance(context, builder, sig.args[0], args[0])
     other = SetInstance(context, builder, sig.args[1], args[1])
 
     return inst.equals(other)
+
 
 @lower_builtin(operator.ne, types.Set, types.Set)
 def set_ne(context, builder, sig, args):
@@ -1438,6 +1443,7 @@ def set_ne(context, builder, sig, args):
 
     return context.compile_internal(builder, ne_impl, sig, args)
 
+
 @lower_builtin(operator.lt, types.Set, types.Set)
 def set_lt(context, builder, sig, args):
     inst = SetInstance(context, builder, sig.args[0], args[0])
@@ -1445,12 +1451,14 @@ def set_lt(context, builder, sig, args):
 
     return inst.issubset(other, strict=True)
 
+
 @lower_builtin(operator.gt, types.Set, types.Set)
 def set_gt(context, builder, sig, args):
     def gt_impl(a, b):
         return b < a
 
     return context.compile_internal(builder, gt_impl, sig, args)
+
 
 @lower_builtin(operator.is_, types.Set, types.Set)
 def set_is(context, builder, sig, args):
@@ -1464,7 +1472,7 @@ def set_is(context, builder, sig, args):
 # -----------------------------------------------------------------------------
 # Implicit casting
 
-@lower_cast(types.Set, types.Set)
+@lower_cast(types.Set, types.Set, ref_type=RefType.BORROWED)
 def set_to_set(context, builder, fromty, toty, val):
     # Casting from non-reflected to reflected
     assert fromty.dtype == toty.dtype

@@ -9,8 +9,9 @@ import contextlib
 import inspect
 import functools
 from enum import Enum
+import warnings
 
-from .. import typing, cgutils, types, utils
+from .. import typing, cgutils, types, utils, errors, config
 from .. typing.templates import BaseRegistryLoader
 
 
@@ -92,7 +93,7 @@ class Registry(object):
         """
         return self.lower_setattr(ty, None)
 
-    def lower_cast(self, fromty, toty):
+    def lower_cast(self, fromty, toty, ref_type=None):
         """
         Decorate the implementation of implicit conversion between
         *fromty* and *toty*.
@@ -100,20 +101,58 @@ class Registry(object):
         The decorated implementation will have the signature
         (context, builder, fromty, toty, val).
         """
+        if ref_type is None:
+            msg = (
+                "\nThe use of lower_cast without specifying a "
+                "numba.targets.imputils.RefType is deprecated."
+            )
+            warnings.warn(errors.NumbaDeprecationWarning(msg), stacklevel=2)
+
+        ref_type = ref_type or RefType.BORROWED  # TODO: deprecation warning for ref_type == None?
+
         def decorate(impl):
-            self.casts.append((impl, (fromty, toty)))
-            return impl
+            if config.CAST_RETURNS_NEW_REFS and ref_type == RefType.BORROWED:
+                def wrapped(context, builder, fromty, toty, val):
+                    res = impl(context, builder, fromty, toty, val)
+                    return impl_ret_borrowed(context, builder, toty, res)
+            elif not config.CAST_RETURNS_NEW_REFS and ref_type == RefType.NEW:
+                raise NotImplementedError('Returning new refs from cast implementations is not supported, yet.')
+            else:
+                wrapped = impl
+
+            self.casts.append((wrapped, (fromty, toty)))
+            return wrapped
         return decorate
 
-    def lower_constant(self, ty):
+    def lower_constant(self, ty, ref_type=None):
         """
         Decorate the implementation for creating a constant of type *ty*.
 
-        The decorated implementation will have the signature
         (context, builder, ty, pyval).
+        The decorated implementation will have the signature
         """
+        if ref_type is None:
+            msg = (
+                "\nThe use of lower_constant without specifying a "
+                "numba.targets.imputils.RefType is deprecated."
+            )
+            warnings.warn(errors.NumbaDeprecationWarning(msg), stacklevel=2)
+
+        ref_type = ref_type or RefType.BORROWED  # TODO: deprecation warning for ref_type == None?
+
         def decorate(impl):
-            self.constants.append((impl, (ty,)))
+            if config.LOWER_CONSTANT_RETURNS_NEW_REFS and ref_type == RefType.BORROWED:
+                def wrapped(context, builder, ty, pyval):
+                    res = impl(context, builder, ty, pyval)
+                    return impl_ret_borrowed(context, builder, ty, res)
+            elif not config.LOWER_CONSTANT_RETURNS_NEW_REFS and ref_type == RefType.NEW:
+                raise NotImplementedError(
+                    'Returning new refs from lower constant  implementations is not supported, yet.'
+                )
+            else:
+                wrapped = impl
+
+            self.constants.append((wrapped, (ty,)))
             return impl
         return decorate
 
@@ -152,6 +191,7 @@ def _decorate_getattr(impl, ty, attr):
     res.attr = attr
     return res
 
+
 def _decorate_setattr(impl, ty, attr):
     real_impl = impl
 
@@ -180,6 +220,7 @@ def fix_returning_optional(context, builder, sig, status, retval):
             builder.store(optional_value, retvalptr)
         retval = builder.load(retvalptr)
     return retval
+
 
 def user_function(fndesc, libs):
     """
@@ -294,6 +335,7 @@ class _IternextResult(object):
         """
         return self._pairobj.first
 
+
 class RefType(Enum):
     """
     Enumerate the reference type
@@ -310,6 +352,7 @@ class RefType(Enum):
     An untracked reference
     """
     UNTRACKED = 3
+
 
 def iternext_impl(ref_type=None):
     """

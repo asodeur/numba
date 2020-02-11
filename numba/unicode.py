@@ -136,7 +136,7 @@ def make_string_from_constant(context, builder, typ, literal_string):
     return uni_str._getvalue()
 
 
-@lower_cast(types.StringLiteral, types.unicode_type)
+@lower_cast(types.StringLiteral, types.unicode_type, ref_type=RefType.BORROWED)
 def cast_from_literal(context, builder, fromty, toty, val):
     return make_string_from_constant(
         context, builder, toty, fromty.literal_value,
@@ -145,7 +145,7 @@ def cast_from_literal(context, builder, fromty, toty, val):
 
 # CONSTANT
 
-@lower_constant(types.unicode_type)
+@lower_constant(types.unicode_type, ref_type=RefType.BORROWED)
 def constant_unicode(context, builder, typ, pyval):
     return make_string_from_constant(context, builder, typ, pyval)
 
@@ -434,6 +434,8 @@ def unicode_len(s):
 def unicode_eq(a, b):
     if not (a.is_internal and b.is_internal):
         return
+    if isinstance(a, types.Optional) or isinstance(b, types.Optional):
+        return
     accept = (types.UnicodeType, types.StringLiteral, types.UnicodeCharSeq)
     a_unicode = isinstance(a, accept)
     b_unicode = isinstance(b, accept)
@@ -453,6 +455,8 @@ def unicode_eq(a, b):
 @overload(operator.ne)
 def unicode_ne(a, b):
     if not (a.is_internal and b.is_internal):
+        return
+    if isinstance(a, types.Optional) or isinstance(b, types.Optional):
         return
     accept = (types.UnicodeType, types.StringLiteral, types.UnicodeCharSeq)
     a_unicode = isinstance(a, accept)
@@ -1680,7 +1684,9 @@ def _repeat_impl(str_arg, mult_arg):
             # to complete the rest of the copies
             rest = new_length - copy_size
             _strncpy(result, copy_size, result, copy_size - rest, rest)
-            return result
+
+        # TODO: check if this was indented into the if block on purpose
+        return result
 
 
 @overload(operator.mul)

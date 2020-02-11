@@ -345,6 +345,10 @@ class _EnvReloader(object):
         # gdb binary location
         GDB_BINARY = _readenv("NUMBA_GDB_BINARY", str, '/usr/bin/gdb')
 
+        # Casting and constant reference types
+        LOWER_CONSTANT_RETURNS_NEW_REFS = _readenv("NUMBA_LOWER_CONSTANT_RETURNS_NEW_REFS", int, 1)
+        CAST_RETURNS_NEW_REFS = _readenv("NUMBA_CAST_RETURNS_NEW_REFS", int, 1)
+
         # Inject the configuration values into the module globals
         for name, value in locals().copy().items():
             if name.isupper():

@@ -2,7 +2,7 @@ from __future__ import print_function, absolute_import, division
 
 from llvmlite import ir
 
-from numba import cgutils, types
+from numba import cgutils, types, jit, config
 
 
 class NRTContext(object):

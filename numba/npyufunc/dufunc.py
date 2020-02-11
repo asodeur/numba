@@ -2,7 +2,7 @@ from __future__ import absolute_import, print_function, division
 
 from numba import serialize
 
-from .. import jit, typeof, utils, types, numpy_support, sigutils
+from .. import jit, typeof, utils, types, numpy_support, sigutils, config
 from ..typing import npydecl
 from ..typing.templates import AbstractTemplate, signature
 from . import _internal, ufuncbuilder
@@ -46,7 +46,14 @@ def make_dufunc_kernel(_dufunc):
             _, res = self.context.call_conv.call_function(
                 self.builder, entry_point, isig.return_type, isig.args,
                 cast_args)
-            return self.cast(res, isig.return_type, osig.return_type)
+            castres = self.cast(res, isig.return_type, osig.return_type)
+
+            if config.CAST_RETURNS_NEW_REFS:
+                for val, ty in zip(cast_args, isig.args):
+                    self.context.decref(self.builder, ty, val)
+                self.context.decref(self.builder, isig.return_type, res)
+
+            return castres
 
     DUFuncKernel.__name__ += _dufunc.ufunc.__name__
     return DUFuncKernel
