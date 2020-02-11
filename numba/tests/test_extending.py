@@ -1,5 +1,3 @@
-from __future__ import print_function, division, absolute_import
-
 import math
 import operator
 import sys
@@ -11,15 +9,16 @@ import re
 
 import numpy as np
 
-from numba import unittest_support as unittest
-from numba import njit, jit, types, errors, typing, compiler
-from numba.typed_passes import type_inference_stage
-from numba.targets.imputils import RefType
-from numba.targets.registry import cpu_target
-from numba.compiler import compile_isolated
-from .support import (TestCase, captured_stdout, tag, temp_directory,
+from numba import njit, jit
+from numba.core import types, errors, typing, compiler
+from numba.core.typed_passes import type_inference_stage
+from numba.core.registry import cpu_target
+from numba.core.compiler import compile_isolated
+from numba.core.imputils import RefType
+from numba.tests.support import (TestCase, captured_stdout, tag, temp_directory,
                       override_config)
-from numba.errors import LoweringError
+from numba.core.errors import LoweringError
+import unittest
 
 from numba.extending import (typeof_impl, type_callable,
                              lower_builtin, lower_cast,
@@ -32,13 +31,13 @@ from numba.extending import (typeof_impl, type_callable,
                              register_jitable,
                              get_cython_function_address
                              )
-from numba.typing.templates import (
+from numba.core.typing.templates import (
     ConcreteTemplate, signature, infer, infer_global, AbstractTemplate)
 
-_IS_PY3 = sys.version_info >= (3,)
 
 # Pandas-like API implementation
 from .pdlike_usecase import Index, Series
+
 
 try:
     import scipy
@@ -60,7 +59,7 @@ class MyDummy(object):
 class MyDummyType(types.Opaque):
     def can_convert_to(self, context, toty):
         if isinstance(toty, types.Number):
-            from numba.typeconv import Conversion
+            from numba.core.typeconv import Conversion
             return Conversion.safe
 
 
@@ -535,14 +534,12 @@ class TestPandasLike(TestCase):
             got = cfunc(i)
             self.assertEqual(got, expected)
 
-    @tag('important')
     def test_series_len(self):
         i = Index(np.int32([2, 4, 3]))
         s = Series(np.float64([1.5, 4.0, 2.5]), i)
         cfunc = jit(nopython=True)(len_usecase)
         self.assertPreciseEqual(cfunc(s), 3)
 
-    @tag('important')
     def test_series_get_index(self):
         i = Index(np.int32([2, 4, 3]))
         s = Series(np.float64([1.5, 4.0, 2.5]), i)
@@ -564,7 +561,6 @@ class TestPandasLike(TestCase):
         self.assertIs(ss._index._data, i._data)
         self.assertPreciseEqual(ss._values, np.cos(np.sin(s._values)))
 
-    @tag('important')
     def test_series_constructor(self):
         i = Index(np.int32([42, 8, -5]))
         d = np.float64([1.5, 4.0, 2.5])
@@ -575,7 +571,6 @@ class TestPandasLike(TestCase):
         self.assertIs(got._index._data, i._data)
         self.assertIs(got._values, d)
 
-    @tag('important')
     def test_series_clip(self):
         i = Index(np.int32([42, 8, -5]))
         s = Series(np.float64([1.5, 4.0, 2.5]), i)
@@ -592,7 +587,6 @@ class TestHighLevelExtending(TestCase):
     Test the high-level combined API.
     """
 
-    @tag('important')
     def test_where(self):
         """
         Test implementing a function with @overload.
@@ -616,7 +610,6 @@ class TestHighLevelExtending(TestCase):
         self.assertIn("x and y should have the same dtype",
                       str(raises.exception))
 
-    @tag('important')
     def test_len(self):
         """
         Test re-implementing len() for a custom type with @overload.
@@ -776,9 +769,8 @@ class TestHighLevelExtending(TestCase):
         msg = str(e.exception)
         self.assertIn(sentinel, msg)
         self.assertIn("keyword argument default values", msg)
-        if _IS_PY3:
-            self.assertIn('<Parameter "kw=12">', msg)
-            self.assertIn('<Parameter "kw=None">', msg)
+        self.assertIn('<Parameter "kw=12">', msg)
+        self.assertIn('<Parameter "kw=None">', msg)
 
         # kwarg name is different
         def impl2(a, b, c, kwarg=None):
@@ -792,9 +784,8 @@ class TestHighLevelExtending(TestCase):
         msg = str(e.exception)
         self.assertIn(sentinel, msg)
         self.assertIn("keyword argument names", msg)
-        if _IS_PY3:
-            self.assertIn('<Parameter "kwarg=None">', msg)
-            self.assertIn('<Parameter "kw=None">', msg)
+        self.assertIn('<Parameter "kwarg=None">', msg)
+        self.assertIn('<Parameter "kw=None">', msg)
 
         # arg name is different
         def impl3(z, b, c, kw=None):
@@ -809,29 +800,26 @@ class TestHighLevelExtending(TestCase):
         self.assertIn(sentinel, msg)
         self.assertIn("argument names", msg)
         self.assertFalse("keyword" in msg)
-        if _IS_PY3:
-            self.assertIn('<Parameter "a">', msg)
-            self.assertIn('<Parameter "z">', msg)
+        self.assertIn('<Parameter "a">', msg)
+        self.assertIn('<Parameter "z">', msg)
 
-        # impl4/5 has invalid syntax for python < 3
-        if _IS_PY3:
-            from .overload_usecases import impl4, impl5
-            with self.assertRaises(errors.TypingError) as e:
-                gen_ol(impl4)(1, 2, 3, 4)
-            msg = str(e.exception)
-            self.assertIn(sentinel, msg)
-            self.assertIn("argument names", msg)
-            self.assertFalse("keyword" in msg)
-            self.assertIn("First difference: 'z'", msg)
+        from .overload_usecases import impl4, impl5
+        with self.assertRaises(errors.TypingError) as e:
+            gen_ol(impl4)(1, 2, 3, 4)
+        msg = str(e.exception)
+        self.assertIn(sentinel, msg)
+        self.assertIn("argument names", msg)
+        self.assertFalse("keyword" in msg)
+        self.assertIn("First difference: 'z'", msg)
 
-            with self.assertRaises(errors.TypingError) as e:
-                gen_ol(impl5)(1, 2, 3, 4)
-            msg = str(e.exception)
-            self.assertIn(sentinel, msg)
-            self.assertIn("argument names", msg)
-            self.assertFalse("keyword" in msg)
-            self.assertIn('<Parameter "a">', msg)
-            self.assertIn('<Parameter "z">', msg)
+        with self.assertRaises(errors.TypingError) as e:
+            gen_ol(impl5)(1, 2, 3, 4)
+        msg = str(e.exception)
+        self.assertIn(sentinel, msg)
+        self.assertIn("argument names", msg)
+        self.assertFalse("keyword" in msg)
+        self.assertIn('<Parameter "a">', msg)
+        self.assertIn('<Parameter "z">', msg)
 
         # too many args
         def impl6(a, b, c, d, e, kw=None):
@@ -846,9 +834,8 @@ class TestHighLevelExtending(TestCase):
         self.assertIn(sentinel, msg)
         self.assertIn("argument names", msg)
         self.assertFalse("keyword" in msg)
-        if _IS_PY3:
-            self.assertIn('<Parameter "d">', msg)
-            self.assertIn('<Parameter "e">', msg)
+        self.assertIn('<Parameter "d">', msg)
+        self.assertIn('<Parameter "e">', msg)
 
         # too few args
         def impl7(a, b, kw=None):
@@ -863,8 +850,7 @@ class TestHighLevelExtending(TestCase):
         self.assertIn(sentinel, msg)
         self.assertIn("argument names", msg)
         self.assertFalse("keyword" in msg)
-        if _IS_PY3:
-            self.assertIn('<Parameter "c">', msg)
+        self.assertIn('<Parameter "c">', msg)
 
         # too many kwargs
         def impl8(a, b, c, kw=None, extra_kwarg=None):
@@ -878,8 +864,7 @@ class TestHighLevelExtending(TestCase):
         msg = str(e.exception)
         self.assertIn(sentinel, msg)
         self.assertIn("keyword argument names", msg)
-        if _IS_PY3:
-            self.assertIn('<Parameter "extra_kwarg=None">', msg)
+        self.assertIn('<Parameter "extra_kwarg=None">', msg)
 
         # too few kwargs
         def impl9(a, b, c):
@@ -893,10 +878,8 @@ class TestHighLevelExtending(TestCase):
         msg = str(e.exception)
         self.assertIn(sentinel, msg)
         self.assertIn("keyword argument names", msg)
-        if _IS_PY3:
-            self.assertIn('<Parameter "kw=None">', msg)
+        self.assertIn('<Parameter "kw=None">', msg)
 
-    @unittest.skipUnless(_IS_PY3, "Python 3+ only syntax")
     def test_typing_vs_impl_signature_mismatch_handling_var_positional(self):
         """
         Tests that an overload which has a differing typing and implementing
