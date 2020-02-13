@@ -104,9 +104,13 @@ def deferred_getattr(context, builder, typ, value, attr):
     Deferred.__getattr__ => redirect to the actual type.
     """
     inner_type = typ.get()
-    val = context.cast(builder, value, typ, inner_type)
+    castval = context.cast(builder, value, typ, inner_type)
     imp = context.get_getattr(inner_type, attr)
-    return imp(context, builder, inner_type, val, attr)
+    res = imp(context, builder, inner_type, castval, attr)
+    if config.CAST_RETURNS_NEW_REFS:
+        context.decref(builder, inner_type, castval)
+
+    return res
 
 
 @lower_cast(types.Any, types.DeferredType, ref_type=RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED)
@@ -160,11 +164,13 @@ def do_minmax(context, builder, argtys, args, cmpop):
         ty = context.typing_context.unify_types(accty, vty)
         assert ty is not None
         acc = context.cast(builder, acc, accty, ty)
-        v = context.cast(builder, v, vty, ty)
+        castval = context.cast(builder, v, vty, ty)
         cmpsig = typing.signature(types.boolean, ty, ty)
         ge = context.get_function(cmpop, cmpsig)
-        pred = ge(builder, (v, acc))
-        res = builder.select(pred, v, acc)
+        pred = ge(builder, (castval, acc))
+        res = builder.select(pred, castval, acc)
+        if config.CAST_RETURNS_NEW_REFS:
+            context.decref(builder, ty, castval)
         return ty, res
 
     typvals = zip(argtys, args)

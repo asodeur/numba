@@ -51,7 +51,10 @@ def optional_getattr(context, builder, typ, value, attr):
     inner_type = typ.type
     val = context.cast(builder, value, typ, inner_type)
     imp = context.get_getattr(inner_type, attr)
-    return imp(context, builder, inner_type, val, attr)
+    res = imp(context, builder, inner_type, val, attr)
+    if config.CAST_RETURNS_NEW_REFS:
+        context.decref(builder, inner_type, val)
+    return res
 
 
 @lower_setattr_generic(types.Optional)
@@ -66,7 +69,12 @@ def optional_setattr(context, builder, sig, args, attr):
 
     newsig = typing.signature(sig.return_type, target_type, valty)
     imp = context.get_setattr(attr, newsig)
-    return imp(builder, (target, val))
+    res = imp(builder, (target, val))
+
+    if config.CAST_RETURNS_NEW_REFS:
+        context.decref(builder, target_type, target)
+
+    return res
 
 
 @lower_cast(types.Optional, types.Optional, ref_type=(

@@ -578,7 +578,8 @@ class Lower(BaseLower):
 
         elif isinstance(value, ir.Yield):
             res = self.lower_yield(ty, value)
-            self.incref(ty, res)
+            if not config.CAST_RETURNS_NEW_REFS:
+                self.incref(ty, res)
             return res
 
         raise NotImplementedError(type(value), value)
@@ -592,15 +593,9 @@ class Lower(BaseLower):
         val = self.loadvar(inst.value.name)
         typ = self.typeof(inst.value.name)
 
-        if config.CAST_RETURNS_NEW_REFS:
-            assert typ == self.gentype.yield_type, \
-                "Yield cannot implicitly cast with " \
-                "'NUMBA_CAST_RETURNS_NEW_REFS'"
-            yret = val
-        else:
-            # cast the local val to the type yielded
-            yret = self.context.cast(self.builder, val, typ,
-                                     self.gentype.yield_type)
+        # cast the local val to the type yielded
+        yret = self.context.cast(
+            self.builder, val, typ, self.gentype.yield_type)
 
         # get the return repr of yielded value
         retval = self.context.get_return_value(self.builder, typ, yret)
