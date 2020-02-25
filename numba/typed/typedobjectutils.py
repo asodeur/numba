@@ -6,7 +6,7 @@ import warnings
 from llvmlite import ir
 from llvmlite.llvmpy.core import Builder
 
-from numba.core import types, cgutils, config
+from numba.core import types, cgutils
 from numba.core import typing
 from numba.core.registry import cpu_target
 from numba.core.typeconv import Conversion
@@ -28,8 +28,7 @@ def _cast(typingctx, val, typ):
         [val, _] = args
         casted = context.cast(
             builder, val, signature.args[0], signature.return_type)
-        if not config.CAST_RETURNS_NEW_REFS:
-            context.nrt.incref(builder, sig.return_type, casted)
+
         return casted
 
     casted = typ.instance_type
@@ -97,8 +96,7 @@ def _nonoptional(typingctx, val):
 
     def codegen(context, builder, sig, args):
         casted = context.cast(builder, args[0], sig.args[0], sig.return_type)
-        if not config.CAST_RETURNS_NEW_REFS:
-            context.nrt.incref(builder, sig.return_type, casted)
+
         return casted
 
     casted = val.type

@@ -107,27 +107,26 @@ def deferred_getattr(context, builder, typ, value, attr):
     castval = context.cast(builder, value, typ, inner_type)
     imp = context.get_getattr(inner_type, attr)
     res = imp(context, builder, inner_type, castval, attr)
-    if config.CAST_RETURNS_NEW_REFS:
-        context.decref(builder, inner_type, castval)
+    context.decref(builder, inner_type, castval)
 
     return res
 
 
-@lower_cast(types.Any, types.DeferredType, ref_type=RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED)
+@lower_cast(types.Any, types.DeferredType, ref_type=RefType.NEW)
 @lower_cast(
-    types.Optional, types.DeferredType, ref_type=RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED)
+    types.Optional, types.DeferredType, ref_type=RefType.NEW)
 @lower_cast(
-    types.Boolean, types.DeferredType, ref_type=RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED)
+    types.Boolean, types.DeferredType, ref_type=RefType.NEW)
 def any_to_deferred(context, builder, fromty, toty, val):
     actual = context.cast(builder, val, fromty, toty.get())
     model = context.data_model_manager[toty]
     return model.set(builder, model.make_uninitialized(), actual)
 
 
-@lower_cast(types.DeferredType, types.Any, ref_type=RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED)
+@lower_cast(types.DeferredType, types.Any, ref_type=RefType.NEW)
 @lower_cast(types.DeferredType, types.Boolean, ref_type=RefType.UNTRACKED)
 @lower_cast(
-    types.DeferredType, types.Optional, ref_type=RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED)
+    types.DeferredType, types.Optional, ref_type=RefType.NEW)
 def deferred_to_any(context, builder, fromty, toty, val):
     model = context.data_model_manager[fromty]
     val = model.get(builder, val)
@@ -169,8 +168,7 @@ def do_minmax(context, builder, argtys, args, cmpop):
         ge = context.get_function(cmpop, cmpsig)
         pred = ge(builder, (castval, acc))
         res = builder.select(pred, castval, acc)
-        if config.CAST_RETURNS_NEW_REFS:
-            context.decref(builder, ty, castval)
+        context.decref(builder, ty, castval)
         return ty, res
 
     typvals = zip(argtys, args)
@@ -323,7 +321,7 @@ def constant_function_pointer(context, builder, ty, pyval):
     return builder.bitcast(ptrval, ptrty)
 
 
-@lower_constant(types.Optional, ref_type=RefType.NEW if config.LOWER_CONSTANT_RETURNS_NEW_REFS else RefType.BORROWED)
+@lower_constant(types.Optional, ref_type=RefType.NEW)
 def constant_optional(context, builder, ty, pyval):
     if pyval is None:
         return context.make_optional_none(builder, ty.type)

@@ -1,5 +1,5 @@
 from numba import jit, typeof
-from numba.core import types, utils, serialize, sigutils, config
+from numba.core import types, utils, serialize, sigutils
 from numba.core.typing import npydecl
 from numba.core.typing.templates import AbstractTemplate, signature
 from numba.np.ufunc import _internal
@@ -47,10 +47,9 @@ def make_dufunc_kernel(_dufunc):
                 cast_args)
             castres = self.cast(res, isig.return_type, osig.return_type)
 
-            if config.CAST_RETURNS_NEW_REFS:
-                for val, ty in zip(cast_args, isig.args):
-                    self.context.decref(self.builder, ty, val)
-                self.context.decref(self.builder, isig.return_type, res)
+            for val, ty in zip(cast_args, isig.args):
+                self.context.decref(self.builder, ty, val)
+            self.context.decref(self.builder, isig.return_type, res)
 
             return castres
 

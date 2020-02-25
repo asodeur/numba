@@ -1,6 +1,6 @@
 import operator
 
-from numba.core import types, typing, cgutils, config
+from numba.core import types, typing, cgutils
 
 from numba.core.imputils import (lower_cast, lower_builtin,
                                  lower_getattr_generic, impl_ret_untracked,
@@ -52,8 +52,8 @@ def optional_getattr(context, builder, typ, value, attr):
     val = context.cast(builder, value, typ, inner_type)
     imp = context.get_getattr(inner_type, attr)
     res = imp(context, builder, inner_type, val, attr)
-    if config.CAST_RETURNS_NEW_REFS:
-        context.decref(builder, inner_type, val)
+    context.decref(builder, inner_type, val)
+
     return res
 
 
@@ -71,14 +71,12 @@ def optional_setattr(context, builder, sig, args, attr):
     imp = context.get_setattr(attr, newsig)
     res = imp(builder, (target, val))
 
-    if config.CAST_RETURNS_NEW_REFS:
-        context.decref(builder, target_type, target)
+    context.decref(builder, target_type, target)
 
     return res
 
 
-@lower_cast(types.Optional, types.Optional, ref_type=(
-    RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED))
+@lower_cast(types.Optional, types.Optional, ref_type=RefType.NEW)
 def optional_to_optional(context, builder, fromty, toty, val):
     """
     The handling of optional->optional cast must be special cased for
@@ -109,8 +107,7 @@ def optional_to_optional(context, builder, fromty, toty, val):
     return outoptval._getvalue()
 
 
-@lower_cast(types.Any, types.Optional, ref_type=(
-    RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED))
+@lower_cast(types.Any, types.Optional, ref_type=RefType.NEW)
 def any_to_optional(context, builder, fromty, toty, val):
     if fromty == types.none:
         return context.make_optional_none(builder, toty.type)
@@ -119,8 +116,7 @@ def any_to_optional(context, builder, fromty, toty, val):
         return context.make_optional_value(builder, toty.type, val)
 
 
-@lower_cast(types.Optional, types.Any, ref_type=(
-    RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED))
+@lower_cast(types.Optional, types.Any, ref_type=RefType.NEW)
 @lower_cast(types.Optional, types.Boolean, ref_type=RefType.UNTRACKED)
 def optional_to_any(context, builder, fromty, toty, val):
     optval = context.make_helper(builder, fromty, value=val)

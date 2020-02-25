@@ -399,10 +399,9 @@ def _lower_array_expr(lowerer, expr):
             castres = self.cast(result, inner_sig.return_type,
                                 self.outer_sig.return_type)
 
-            if config.CAST_RETURNS_NEW_REFS:
-                for val, ty in zip(cast_args, inner_sig.args):
-                    self.context.decref(self.builder, ty, val)
-                self.context.decref(self.builder, inner_sig.return_type, result)
+            for val, ty in zip(cast_args, inner_sig.args):
+                self.context.decref(self.builder, ty, val)
+            self.context.decref(self.builder, inner_sig.return_type, result)
 
             return castres
 

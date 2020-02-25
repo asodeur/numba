@@ -168,7 +168,7 @@ def _prepare_argument(ctxt, bld, inp, tyinp, where='input operand'):
         tyinp = tyinp.type
         inp = ctxt.cast(bld, inp, oty, tyinp)
     else:
-        # cast will incref if config.CAST_RETURNS_NEW_REFS
+        # cast will incref
         inp = ctxt.cast(bld, inp, tyinp, tyinp)
 
     # then prepare the arg for a concrete instance
@@ -330,8 +330,7 @@ def numpy_ufunc_kernel(context, builder, sig, args, kernel_class,
         ret_ty = sig.return_type
         if isinstance(ret_ty, types.ArrayCompatible):
             output = _build_array(context, builder, ret_ty, sig.args, arguments)
-            if config.CAST_RETURNS_NEW_REFS:
-                context.incref(builder, ret_ty, output.return_val)
+            context.incref(builder, ret_ty, output.return_val)
         else:
             output = _prepare_argument(
                 context, builder,
@@ -364,13 +363,12 @@ def numpy_ufunc_kernel(context, builder, sig, args, kernel_class,
         output.store_data(loop_indices, val_out)
     out = arguments[-1].return_val
 
-    if config.CAST_RETURNS_NEW_REFS:
-        for val, ty in zip(arguments, sig.args):
-            if isinstance(ty, types.Optional):
-                ty = ty.type
-            context.decref(builder, ty, val.return_val)
-        if not explicit_output:
-            context.decref(builder, sig.return_type, output.return_val)
+    for val, ty in zip(arguments, sig.args):
+        if isinstance(ty, types.Optional):
+            ty = ty.type
+        context.decref(builder, ty, val.return_val)
+    if not explicit_output:
+        context.decref(builder, sig.return_type, output.return_val)
 
     return impl_ret_new_ref(context, builder, sig.return_type, out)
 
@@ -450,10 +448,9 @@ def _ufunc_db_function(ufunc):
             res = dmm[isig.return_type].from_return(self.builder, res)
             castres = self.cast(res, isig.return_type, osig.return_type)
 
-            if config.CAST_RETURNS_NEW_REFS:
-                for val, ty in zip(cast_args, isig.args):
+            for val, ty in zip(cast_args, isig.args):
                     self.context.decref(self.builder, ty, val)
-                self.context.decref(self.builder, isig.return_type, res)
+            self.context.decref(self.builder, isig.return_type, res)
 
             return castres
 

@@ -688,11 +688,11 @@ def list_add(context, builder, sig, args):
     with cgutils.for_range(builder, a_size) as loop:
         value = a.getitem(loop.index)
         castvalue = context.cast(builder, value, a.dtype, dest.dtype)
-        dest.setitem(loop.index, castvalue, incref=not config.CAST_RETURNS_NEW_REFS)
+        dest.setitem(loop.index, castvalue, incref=False)
     with cgutils.for_range(builder, b_size) as loop:
         value = b.getitem(loop.index)
         castvalue = context.cast(builder, value, b.dtype, dest.dtype)
-        dest.setitem(builder.add(loop.index, a_size), castvalue, incref=not config.CAST_RETURNS_NEW_REFS)
+        dest.setitem(builder.add(loop.index, a_size), castvalue, incref=False)
 
     return impl_ret_new_ref(context, builder, sig.return_type, dest.value)
 
@@ -891,7 +891,7 @@ def _list_extend_list(context, builder, sig, args):
     with cgutils.for_range(builder, src_size) as loop:
         value = src.getitem(loop.index)
         castvalue = context.cast(builder, value, src.dtype, dest.dtype)
-        dest.setitem(builder.add(loop.index, dest_size), castvalue, incref=not config.CAST_RETURNS_NEW_REFS)
+        dest.setitem(builder.add(loop.index, dest_size), castvalue, incref=False)
 
     return dest
 

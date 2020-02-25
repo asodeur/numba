@@ -3,7 +3,7 @@ Helpers to see the refcount information of an object
 """
 from llvmlite import ir
 
-from numba.core import types, cgutils, config
+from numba.core import types, cgutils
 from numba.core.extending import intrinsic
 
 from numba.core.runtime.nrtdynmod import _meminfo_struct_type
@@ -39,7 +39,7 @@ def dump_refcount(typingctx, obj):
                 refct_32bit = builder.trunc(refct, ir.IntType(32))
                 refct_32bit = builder.sub(
                     refct_32bit,
-                    ir.Constant(ir.IntType(32), config.CAST_RETURNS_NEW_REFS)
+                    ir.Constant(ir.IntType(32), 1)
                 )
                 printed = cgutils.snprintf_stackbuffer(
                     builder, 30, "%d [%p]", refct_32bit, miptr
@@ -79,7 +79,7 @@ def get_refcount(typingctx, obj):
                 refct_32bit = builder.trunc(refct, ir.IntType(32))
                 refct_32bit = builder.sub(
                     refct_32bit,
-                    ir.Constant(ir.IntType(32), config.CAST_RETURNS_NEW_REFS)
+                    ir.Constant(ir.IntType(32), 1)
                 )
                 refcounts.append(refct_32bit)
         return refcounts[0]

@@ -116,9 +116,8 @@ def namedtuple_getattr(context, builder, typ, value, attr):
     return impl_ret_borrowed(context, builder, typ[index], res)
 
 
-@lower_constant(types.UniTuple, ref_type=RefType.NEW if config.LOWER_CONSTANT_RETURNS_NEW_REFS else RefType.BORROWED)
-@lower_constant(
-    types.NamedUniTuple, ref_type=RefType.NEW if config.LOWER_CONSTANT_RETURNS_NEW_REFS else RefType.BORROWED)
+@lower_constant(types.UniTuple, ref_type=RefType.NEW)
+@lower_constant(types.NamedUniTuple, ref_type=RefType.NEW)
 def unituple_constant(context, builder, ty, pyval):
     """
     Create a homogeneous tuple constant.
@@ -131,8 +130,8 @@ def unituple_constant(context, builder, ty, pyval):
     )
 
 
-@lower_constant(types.Tuple, ref_type=RefType.NEW if config.LOWER_CONSTANT_RETURNS_NEW_REFS else RefType.BORROWED)
-@lower_constant(types.NamedTuple, ref_type=RefType.NEW if config.LOWER_CONSTANT_RETURNS_NEW_REFS else RefType.BORROWED)
+@lower_constant(types.Tuple, ref_type=RefType.NEW)
+@lower_constant(types.NamedTuple, ref_type=RefType.NEW)
 def unituple_constant(context, builder, ty, pyval):
     """
     Create a heterogeneous tuple constant.
@@ -279,10 +278,8 @@ def getitem_typed(context, builder, sig, args):
         builder.position_at_end(bbend)
         res = builder.bitcast(phinode, lrtty.as_pointer())
         res = builder.load(res)
-        if config.CAST_RETURNS_NEW_REFS:
-            return impl_ret_new_ref(context, builder, sig.return_type, res)
-        else:
-            return impl_ret_borrowed(context, builder, sig.return_type, res)
+
+        return impl_ret_new_ref(context, builder, sig.return_type, res)
 
 
 @lower_builtin(operator.getitem, types.UniTuple, types.intp)
@@ -364,7 +361,7 @@ def static_getitem_tuple(context, builder, sig, args):
 # Implicit conversion
 
 @lower_cast(
-    types.BaseTuple, types.BaseTuple, ref_type=RefType.NEW if config.CAST_RETURNS_NEW_REFS else RefType.BORROWED)
+    types.BaseTuple, types.BaseTuple, ref_type=RefType.NEW)
 def tuple_to_tuple(context, builder, fromty, toty, val):
     if (isinstance(fromty, types.BaseNamedTuple)
          or isinstance(toty, types.BaseNamedTuple)):

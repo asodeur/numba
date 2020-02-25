@@ -712,8 +712,7 @@ class BaseContext(object):
         granularity of the Numba type system, or lax Python semantics.
         """
         if fromty == toty or toty == types.Any:
-            if config.CAST_RETURNS_NEW_REFS:
-                self.incref(builder, fromty, val)
+            self.incref(builder, fromty, val)
             return val
         try:
             impl = self._casts.find((fromty, toty))
@@ -741,9 +740,8 @@ class BaseContext(object):
         self.add_linking_libs(getattr(cmpfunc, 'libs', ()))
         res = cmpfunc(builder, (cav, cbv))
 
-        if config.CAST_RETURNS_NEW_REFS:
-            self.decref(builder, ty, cav)
-            self.decref(builder, ty, cbv)
+        self.decref(builder, ty, cav)
+        self.decref(builder, ty, cbv)
 
         return res
 

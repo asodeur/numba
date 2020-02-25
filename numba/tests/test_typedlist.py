@@ -884,12 +884,8 @@ class TestListRefctTypes(MemoryLeakMixin, TestCase):
             self.assertEqual(l[0], "zyx")
             # refcounts are a little sensitive to optimization
             # level and the implementation
-            if not config.CAST_RETURNS_NEW_REFS and config.OPT > 0:
-                self.assertEqual(ra, 1)
-                self.assertEqual(rz, 2)
-            elif config.OPT > 0:
-                self.assertEqual(ra, 0)
-                self.assertEqual(rz, 2)
+            self.assertEqual(ra, 0)
+            self.assertEqual(rz, 2)
         except AssertionError:
             # make sure to clean-up, otherwise we get a
             # false memory leak error on top

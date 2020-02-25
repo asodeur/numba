@@ -75,8 +75,7 @@ class BaseCallConv(object):
 
         elif not isinstance(valty, types.Optional):
             castval = self.context.cast(builder, value, fromty=valty, toty=retty.type)
-            if config.CAST_RETURNS_NEW_REFS:
-                self.context.decref(builder, valty, value)
+            self.context.decref(builder, valty, value)
             retval = self.context.get_return_value(builder, retty.type, castval)
             self.return_value(builder, retval)
 

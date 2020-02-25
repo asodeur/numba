@@ -370,11 +370,8 @@ class Lower(BaseLower):
                 self.call_conv.return_optional_value(self.builder, ty, oty, val)
                 return
             if ty != oty:
-                if config.CAST_RETURNS_NEW_REFS:
-                    raise NotImplementedError(
-                        "Return cannot implicitly cast with "
-                        "'NUMBA_CAST_RETURNS_NEW_REFS'")
-                val = self.context.cast(self.builder, val, oty, ty)
+                raise NotImplementedError("Return cannot implicitly cast.")
+
             retval = self.context.get_return_value(self.builder, ty, val)
             self.call_conv.return_value(self.builder, retval)
 
@@ -393,9 +390,8 @@ class Lower(BaseLower):
                 castval = self.context.cast(self.builder, value, valuety,
                                             signature.args[2])
                 res = impl(self.builder, (target, inst.index, castval))
-                if config.CAST_RETURNS_NEW_REFS:
-                    self.context.decref(
-                        self.builder, signature.args[2], castval)
+                self.context.decref(
+                    self.builder, signature.args[2], castval)
 
                 return res
 
@@ -434,9 +430,9 @@ class Lower(BaseLower):
             castindex = self.context.cast(self.builder, index, indexty,
                                           signature.args[1])
             res = impl(self.builder, (target, castindex))
-            if config.CAST_RETURNS_NEW_REFS:
-                # TODO: maybe this is a little paranoid.
-                self.context.decref(self.builder, signature.args[1], castindex)
+            # TODO: maybe this is a little paranoid.
+            self.context.decref(self.builder, signature.args[1], castindex)
+
             return res
 
         elif isinstance(inst, ir.Del):
@@ -457,8 +453,7 @@ class Lower(BaseLower):
             castval = self.context.cast(self.builder, value, valuety,
                                         signature.args[1])
             res = impl(self.builder, (target, castval))
-            if config.CAST_RETURNS_NEW_REFS:
-                self.context.decref(self.builder, signature.args[1], castval)
+            self.context.decref(self.builder, signature.args[1], castval)
 
             return res
 
@@ -509,10 +504,9 @@ class Lower(BaseLower):
 
         res = impl(self.builder, (casttarget, castindex, castval))
 
-        if config.CAST_RETURNS_NEW_REFS:
-            self.context.decref(self.builder, signature.args[0], casttarget)
-            self.context.decref(self.builder, signature.args[1], castindex)
-            self.context.decref(self.builder, signature.args[2], castval)
+        self.context.decref(self.builder, signature.args[0], casttarget)
+        self.context.decref(self.builder, signature.args[1], castindex)
+        self.context.decref(self.builder, signature.args[2], castval)
 
         return res
 
@@ -537,8 +531,6 @@ class Lower(BaseLower):
             res = self.context.get_constant_generic(self.builder, ty,
                                                     value.value)
 
-            if not config.LOWER_CONSTANT_RETURNS_NEW_REFS:
-                self.incref(ty, res)
             return res
 
         elif isinstance(value, ir.Expr):
@@ -548,8 +540,7 @@ class Lower(BaseLower):
             val = self.loadvar(value.name)
             oty = self.typeof(value.name)
             res = self.context.cast(self.builder, val, oty, ty)
-            if not config.CAST_RETURNS_NEW_REFS:
-                self.incref(ty, res)
+
             return res
 
         elif isinstance(value, ir.Arg):
@@ -564,22 +555,15 @@ class Lower(BaseLower):
                                                           pyval)
                 # cast it to the variable type
                 res = self.context.cast(self.builder, const, valty, ty)
-                if not config.CAST_RETURNS_NEW_REFS:
-                    self.incref(ty, res)
-                if config.LOWER_CONSTANT_RETURNS_NEW_REFS:
-                    self.decref(valty, const)
+                self.decref(valty, const)
             else:
                 val = self.fnargs[value.index]
                 res = self.context.cast(self.builder, val, argty, ty)
-                if not config.CAST_RETURNS_NEW_REFS:
-                    self.incref(ty, res)
 
             return res
 
         elif isinstance(value, ir.Yield):
             res = self.lower_yield(ty, value)
-            if not config.CAST_RETURNS_NEW_REFS:
-                self.incref(ty, res)
             return res
 
         raise NotImplementedError(type(value), value)
@@ -632,10 +616,9 @@ class Lower(BaseLower):
             # do not use res after this
             castres = self.context.cast(self.builder, res,
                                         signature.return_type, resty)
-            if config.CAST_RETURNS_NEW_REFS:
-                self.decref(signature.return_type, res)
-                self.decref(signature.args[0], casted_lhs)
-                self.decref(signature.args[1], casted_rhs)
+            self.decref(signature.return_type, res)
+            self.decref(signature.args[0], casted_lhs)
+            self.decref(signature.args[1], casted_rhs)
             return castres
 
         # First try with static operands, if known
@@ -705,10 +688,9 @@ class Lower(BaseLower):
         castres = self.context.cast(self.builder, res,
                                     signature.return_type,
                                     resty)
-        if config.CAST_RETURNS_NEW_REFS:
-            self.context.decref(self.builder, signature.return_type, res)
-            for av, at in zip(castvals, signature.args):
-                self.context.decref(self.builder, at, av)
+        self.context.decref(self.builder, signature.return_type, res)
+        for av, at in zip(castvals, signature.args):
+            self.context.decref(self.builder, at, av)
         return castres
 
     def _cast_var(self, var, ty):
@@ -747,19 +729,8 @@ class Lower(BaseLower):
                 return self._cast_var(var, signature.args[index])
 
             def default_handler(index, param, default):
-                if (not config.CAST_RETURNS_NEW_REFS
-                        and config.LOWER_CONSTANT_RETURNS_NEW_REFS):
-                    raise NotImplementedError(
-                        "Cannot use default argments with "
-                        "NUMBA_CAST_RETURNS_NEW_REFS=0 "
-                        "and NUMBALOWER_CONSTANT_RETURNS_NEW_REFS=1"
-                    )
                 const = self.context.get_constant_generic(
                     self.builder, signature.args[index], default)
-
-                if (config.CAST_RETURNS_NEW_REFS
-                        and not config.LOWER_CONSTANT_RETURNS_NEW_REFS):
-                    self.incref(signature.args[index], default)
 
                 return const
 
@@ -806,9 +777,8 @@ class Lower(BaseLower):
         impl = self.context.get_function(print, fixed_sig)
         impl(self.builder, argvals)
 
-        if config.CAST_RETURNS_NEW_REFS:
-            for av, at in zip(argvals, sig.args):
-                self.context.decref(self.builder, at, av)
+        for av, at in zip(argvals, sig.args):
+            self.context.decref(self.builder, at, av)
 
     def lower_call(self, resty, expr):
         signature = self.fndesc.calltypes[expr]
@@ -851,8 +821,7 @@ class Lower(BaseLower):
 
         castres = self.context.cast(self.builder, res, signature.return_type,
                                     resty)
-        if config.CAST_RETURNS_NEW_REFS:
-            self.context.decref(self.builder, signature.return_type, res)
+        self.context.decref(self.builder, signature.return_type, res)
         return castres
 
     def _lower_call_ObjModeDispatcher(self, fnty, expr, signature):
@@ -933,9 +902,8 @@ class Lower(BaseLower):
         res = self.context.call_external_function(
             self.builder, func, fndesc.argtypes, argvals,
         )
-        if config.CAST_RETURNS_NEW_REFS:
-            for av, at in zip(argvals, signature.args):
-                self.context.decref(self.builder, at, av)
+        for av, at in zip(argvals, signature.args):
+            self.context.decref(self.builder, at, av)
 
         return res
 
@@ -983,9 +951,8 @@ class Lower(BaseLower):
                 self.builder, pointer, argvals, fnty.cconv,
             )
 
-        if config.CAST_RETURNS_NEW_REFS:
-            for av, at in zip(argvals, signature.args):
-                self.context.decref(self.builder, at, av)
+        for av, at in zip(argvals, signature.args):
+            self.context.decref(self.builder, at, av)
 
         return res
 
@@ -1007,9 +974,8 @@ class Lower(BaseLower):
                 self.builder, mangled_name, signature, argvals,
             )
 
-        if config.CAST_RETURNS_NEW_REFS:
-            for av, at in zip(argvals, signature.args):
-                self.context.decref(self.builder, at, av)
+        for av, at in zip(argvals, signature.args):
+            self.context.decref(self.builder, at, av)
 
         return res
 
@@ -1033,7 +999,7 @@ class Lower(BaseLower):
             argvals = [the_self] + list(argvals)
 
         res = impl(self.builder, argvals, self.loc)
-        if config.CAST_RETURNS_NEW_REFS and not (
+        if not (
                 isinstance(expr.func, ir.Intrinsic)
                 or isinstance(fnty, types.ObjModeDispatcher)
         ):
@@ -1069,9 +1035,8 @@ class Lower(BaseLower):
             res = impl(self.builder, [castval])
             castres = self.context.cast(self.builder, res,
                                         signature.return_type, resty)
-            if config.CAST_RETURNS_NEW_REFS:
-                self.decref(signature.args[0], castval)
-                self.decref(signature.return_type, res)
+            self.decref(signature.args[0], castval)
+            self.decref(signature.return_type, res)
 
             return castres
 
@@ -1103,9 +1068,8 @@ class Lower(BaseLower):
             res = impl(self.builder, (castval,))
             castres = self.context.cast(
                 self.builder, res, signature.return_type, resty)
-            if config.CAST_RETURNS_NEW_REFS:
-                self.decref(fty, castval)
-                self.decref(signature.return_type, res)
+            self.decref(fty, castval)
+            self.decref(signature.return_type, res)
             return castres
 
         elif expr.op == 'exhaust_iter':
@@ -1116,15 +1080,13 @@ class Lower(BaseLower):
                 castval = self.context.cast(self.builder, val, ty, ty.type)
                 ty = ty.type
             else:
-                # this will incref when NUMBA_CAST_RETURNS_NEW_REFS
+                # do not remove, this will incref
                 castval = self.context.cast(self.builder, val, ty, ty)
 
             # If we have a tuple, we needn't do anything
             # (and we can't iterate over the heterogeneous ones).
             if isinstance(ty, types.BaseTuple):
                 assert ty == resty
-                if not config.CAST_RETURNS_NEW_REFS:
-                    self.incref(ty, castval)
                 return castval
 
             itemty = ty.iterator_type.yield_type
@@ -1137,8 +1099,7 @@ class Lower(BaseLower):
             iternext_impl = self.context.get_function('iternext',
                                                       iternext_sig)
             iterobj = getiter_impl(self.builder, (castval,))
-            if config.CAST_RETURNS_NEW_REFS:
-                self.decref(ty, castval)
+            self.decref(ty, castval)
             # We call iternext() as many times as desired (`expr.count`).
             for i in range(expr.count):
                 pair = iternext_impl(self.builder, (iterobj,))
@@ -1172,8 +1133,7 @@ class Lower(BaseLower):
                 casted = self.context.cast(self.builder, val, ty, resty.this)
                 res = self.context.get_bound_function(self.builder, casted,
                                                       resty.this)
-                if config.CAST_RETURNS_NEW_REFS:
-                    self.decref(resty.this, casted)
+                self.decref(resty.this, casted)
                 self.incref(resty, res)
                 return res
             else:
@@ -1189,8 +1149,7 @@ class Lower(BaseLower):
 
                 # Cast the attribute type to the expected output type
                 castres = self.context.cast(self.builder, res, attrty, resty)
-                if config.CAST_RETURNS_NEW_REFS:
-                    self.context.decref(self.builder, attrty, res)
+                self.context.decref(self.builder, attrty, res)
                 return castres
 
         elif expr.op == "static_getitem":
@@ -1234,9 +1193,8 @@ class Lower(BaseLower):
                         for val, toty, fromty in zip(itemvals, resty, itemtys)]
             tup = self.context.make_tuple(self.builder, resty, castvals)
             self.incref(resty, tup)
-            if config.CAST_RETURNS_NEW_REFS:
-                for val, toty in zip(castvals, resty):
-                    self.context.decref(self.builder, toty, val)
+            for val, toty in zip(castvals, resty):
+                self.context.decref(self.builder, toty, val)
             return tup
 
         elif expr.op == "build_list":
@@ -1247,9 +1205,8 @@ class Lower(BaseLower):
                         for val, fromty in zip(itemvals, itemtys)]
             lst = self.context.build_list(self.builder, resty, castvals)
 
-            if config.CAST_RETURNS_NEW_REFS:
-                for val in castvals:
-                    self.context.decref(self.builder, resty.dtype, val)
+            for val in castvals:
+                self.context.decref(self.builder, resty.dtype, val)
 
             return lst
 
@@ -1262,9 +1219,8 @@ class Lower(BaseLower):
                                           resty.dtype)
                         for val, fromty in zip(itemvals, itemtys)]
             st = self.context.build_set(self.builder, resty, castvals)
-            if config.CAST_RETURNS_NEW_REFS:
-                for val in castvals:
-                    self.context.decref(self.builder, resty.dtype, val)
+            for val in castvals:
+                self.context.decref(self.builder, resty.dtype, val)
 
             return st
 
@@ -1289,8 +1245,6 @@ class Lower(BaseLower):
             val = self.loadvar(expr.value.name)
             ty = self.typeof(expr.value.name)
             castval = self.context.cast(self.builder, val, ty, resty)
-            if not config.CAST_RETURNS_NEW_REFS:
-                self.incref(resty, castval)
             return castval
 
         elif expr.op in self.context.special_ops:
