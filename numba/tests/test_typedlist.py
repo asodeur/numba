@@ -884,8 +884,8 @@ class TestListRefctTypes(MemoryLeakMixin, TestCase):
             self.assertEqual(l[0], "zyx")
             # refcounts are a little sensitive to optimization
             # level and the implementation
-            self.assertEqual(ra, 0)
-            self.assertEqual(rz, 2)
+            self.assertEqual(ra, 1)
+            self.assertEqual(rz, 3)
         except AssertionError:
             # make sure to clean-up, otherwise we get a
             # false memory leak error on top
@@ -903,7 +903,7 @@ class TestListRefctTypes(MemoryLeakMixin, TestCase):
             return get_refcount(d)
 
         c = foo()
-        self.assertEqual(2, c)
+        self.assertEqual(3, c)
 
     def test_dict_as_item_in_list_multi_refcount(self):
         @njit
@@ -917,7 +917,7 @@ class TestListRefctTypes(MemoryLeakMixin, TestCase):
             return get_refcount(d)
 
         c = foo()
-        self.assertEqual(3, c)
+        self.assertEqual(4, c)
 
     def test_list_as_value_in_dict(self):
         @njit
@@ -930,7 +930,7 @@ class TestListRefctTypes(MemoryLeakMixin, TestCase):
             return get_refcount(l)
 
         c = foo()
-        self.assertEqual(2, c)
+        self.assertEqual(3, c)
 
     def test_list_as_item_in_list(self):
         nested_type = types.ListType(types.int32)
