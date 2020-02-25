@@ -593,12 +593,9 @@ class Lower(BaseLower):
         val = self.loadvar(inst.value.name)
         typ = self.typeof(inst.value.name)
 
-        # cast the local val to the type yielded
-        yret = self.context.cast(
-            self.builder, val, typ, self.gentype.yield_type)
-
+        assert typ == self.gentype.yield_type, "Yield cannot implicitly cast."
         # get the return repr of yielded value
-        retval = self.context.get_return_value(self.builder, typ, yret)
+        retval = self.context.get_return_value(self.builder, typ, val)
 
         # return
         self.call_conv.return_value(self.builder, retval)
